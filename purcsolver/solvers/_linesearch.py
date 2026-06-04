@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from typing import Callable, Tuple
 
+import torch
+
 
 def armijo_backtracking_t(
     phi_of_t: Callable[[float], float],
@@ -57,3 +59,44 @@ def armijo_backtracking_t(
             return t, phi_trial, True
         t *= beta
     return t, phi_trial, False
+
+
+def armijo_backtracking_batch(
+    phi_of_t: Callable[[torch.Tensor], torch.Tensor],
+    phi0: torch.Tensor,
+    directional_derivative: torch.Tensor,
+    *,
+    c1: float,
+    beta: float,
+    max_steps: int,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Vectorized Armijo backtracking with a per-system step length.
+
+    Each of the ``B`` systems (OD-pairs) gets its own ``t``; a single batched
+    objective evaluation per backtracking level checks the Armijo condition for
+    all still-searching systems and freezes those that pass.
+
+    Args:
+        phi_of_t: Batched objective, ``t[B] -> phi(lambda + t d)[B]``.
+        phi0: Cached ``phi(lambda)[B]``.
+        directional_derivative: ``(grad phi . d)[B]`` (each ``< 0``).
+        c1: Armijo parameter in ``(0, 1/2)``.
+        beta: Backtracking shrink factor in ``(0, 1)``.
+        max_steps: Maximum number of halvings.
+
+    Returns:
+        ``(t, success)``: per-system step lengths ``[B]`` and an acceptance
+        boolean mask ``[B]``.
+
+    """
+    t = torch.ones_like(phi0)
+    accepted = torch.zeros_like(phi0, dtype=torch.bool)
+    for _ in range(max_steps):
+        phit = phi_of_t(t)
+        ok = phit <= phi0 + c1 * t * directional_derivative
+        accepted = accepted | ok
+        if bool(accepted.all()):
+            break
+        t = torch.where(accepted, t, t * beta)
+    return t, accepted

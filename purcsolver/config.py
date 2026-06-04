@@ -36,8 +36,14 @@ class SSNConfig:
         armijo_beta: Armijo backtracking shrink factor in ``(0, 1)``.
         max_linesearch: Maximum backtracking steps per Newton iteration.
         stall_patience: Stop early if the residual fails to improve by more than
-            a tiny relative amount for this many consecutive iterations (it has
-            hit the numerical floor); avoids spinning to ``max_iter``.
+            a tiny relative amount for this many consecutive iterations *and* it
+            is already below :attr:`stall_floor` (i.e. genuinely at the numerical
+            floor); avoids spinning to ``max_iter`` without prematurely stopping a
+            slowly-but-truly-converging solve.
+        stall_floor: Residual level below which a plateau is treated as the
+            numerical floor.  The dual gradient ``r = A x_hat - b`` is non-monotone
+            (the line search decreases the dual objective, not ``r``), so a plateau
+            at a *large* ``r`` must not trigger an early stop.
         warm_start: If ``True``, persist the solution multipliers between
             successive ``solve`` calls so a sweep over slightly varying ``theta``
             (the estimation outer loop) converges in few iterations.
@@ -56,6 +62,7 @@ class SSNConfig:
     armijo_beta: float = 0.5
     max_linesearch: int = 30
     stall_patience: int = 8
+    stall_floor: float = 1e-6
     warm_start: bool = True
     laplacian: Dict[str, Any] = field(default_factory=dict)
     profile: bool = False

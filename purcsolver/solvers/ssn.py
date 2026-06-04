@@ -46,7 +46,7 @@ from ..utils.logging import get_logger
 from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor
 from ..utils.typing import ArrayLike
 from . import SOLVERS
-from ._linesearch import armijo_backtracking_t
+from ._linesearch import armijo_backtracking_batch, armijo_backtracking_t
 from .base import ForwardSolver
 
 _logger = get_logger(__name__)
@@ -64,6 +64,7 @@ class RegularizedSSNSolver(ForwardSolver):
         super().__init__(config)
         self._backend: Optional[LaplacianBackend] = None
         self._lam: Optional[torch.Tensor] = None
+        self._lam_batch: Optional[torch.Tensor] = None
 
     def preprocess(self, problem: PUMProblem) -> None:
         """
@@ -163,14 +164,15 @@ class RegularizedSSNSolver(ForwardSolver):
                     nit = it
                     break
 
-                # Stagnation: residual no longer improving (hit the numerical
-                # floor below the requested tol).  Stop instead of spinning.
+                # Stagnation: residual no longer improving AND already at the
+                # numerical floor (r is non-monotone, so only a plateau at small
+                # r means stalled -- a plateau at large r is just slow progress).
                 if r_inf < best_r * (1.0 - 1e-3):
                     best_r = r_inf
                     stalled = 0
                 else:
                     stalled += 1
-                    if stalled >= cfg.stall_patience:
+                    if stalled >= cfg.stall_patience and best_r < cfg.stall_floor:
                         status = STATUS_STALLED
                         break
 
@@ -238,6 +240,144 @@ class RegularizedSSNSolver(ForwardSolver):
             extras={
                 "active_set_size": int(interior.sum()),
                 "linesearch_steps": ls_steps,
+                "backend_method": self._backend.method,
+                "backend_phase": self._backend.phase,
+            },
+        )
+
+    def solve_batch(
+        self,
+        theta: Tuple[ArrayLike, ArrayLike],
+        b_batch: ArrayLike,
+        *,
+        lam0: Optional[ArrayLike] = None,
+    ) -> PURCResult:
+        """
+        Solve a batch of OD-pairs sharing ``(perturbation, constraint, theta)``.
+
+        The OD-pairs share the network ``A``, the link utilities ``v(beta)`` and
+        the perturbation, and differ only in the demand ``b``.  The whole Newton
+        loop is vectorized over the ``B`` systems: recovery, residual, weights and
+        the line search operate on ``[B, N]`` / ``[B, k]`` tensors, and each
+        Newton iteration is a single batched linear solve.  A per-system converged
+        mask freezes finished systems.
+
+        Args:
+            theta: ``(beta, gamma)`` shared by all systems.
+            b_batch: Per-system demands, shape ``[B, k]``.
+            lam0: Optional warm-start multipliers ``[B, k]``; defaults to the
+                persisted batch (when shapes match) or zeros.
+
+        Returns:
+            A :class:`PURCResult` whose ``x`` (``[B, N]``) and ``lam`` (``[B, k]``)
+            are batched; ``success`` is overall, with per-system residuals and the
+            converged mask in ``extras``.
+
+        Raises:
+            RuntimeError: If :meth:`preprocess` has not been called.
+
+        """
+        if self._problem is None or self._backend is None:
+            raise RuntimeError("call preprocess(problem) before solve_batch()")
+
+        cfg = self.config
+        c = self._problem.constraint
+        pert = self._problem.perturbation
+        beta, gamma = theta
+        v = self._problem.utility(beta).reshape(1, -1)  # [1, N]
+        b_batch = as_tensor(b_batch)
+        if b_batch.ndim == 1:
+            b_batch = b_batch.reshape(1, -1)
+        n_sys = b_batch.shape[0]
+
+        if lam0 is not None:
+            lam = as_tensor(lam0).clone()
+        elif (
+            cfg.warm_start
+            and self._lam_batch is not None
+            and self._lam_batch.shape == b_batch.shape
+        ):
+            lam = self._lam_batch.clone()
+        else:
+            lam = torch.zeros_like(b_batch)
+
+        ell = c.ell.reshape(1, -1)
+        lo, hi = c.lo, c.hi
+        history: list[float] = []
+        converged = torch.zeros(n_sys, dtype=torch.bool)
+        status = STATUS_MAX_ITER
+        nit = 0
+        x_hat = torch.zeros((n_sys, c.num_coords), dtype=DEFAULT_DTYPE)
+        eps0 = torch.full((n_sys,), cfg.eps0, dtype=DEFAULT_DTYPE)
+
+        with torch.no_grad():
+            for it in range(cfg.max_iter):
+                nit = it + 1
+                eta = (v + c.rmatvec_batch(lam)) / ell
+                x_hat, interior = pert.primal_recovery(eta, lo, hi, gamma)
+                r = c.matvec_batch(x_hat) - b_batch
+                r_inf = r.abs().amax(dim=1)
+                history.append(float(r_inf.max()))
+                converged = converged | (r_inf < cfg.tol)
+                if bool(converged.all()):
+                    status = STATUS_CONVERGED
+                    nit = it
+                    break
+
+                active = (~converged).unsqueeze(1)
+                weight = torch.where(
+                    interior, pert.inv_hess_weight(x_hat, gamma) / ell, torch.zeros_like(x_hat)
+                )
+                eps_k = torch.clamp(torch.minimum(r.norm(dim=1), eps0), min=cfg.eps_floor)
+                direction = self._backend.solve_batch(weight, eps_k, -r) * active
+
+                # Vectorized line search: eta(t) = eta + t * (A^T d / ell).
+                atd_over_ell = c.rmatvec_batch(direction) / ell
+                bd = (b_batch * direction).sum(dim=1)
+                phi_lin0 = -(b_batch * lam).sum(dim=1)
+                conj0 = eta * x_hat - pert.h(x_hat, gamma)
+                phi0 = phi_lin0 + (conj0 * ell).sum(dim=1)
+                dderiv = (r * direction).sum(dim=1)
+
+                def phi_of_t(t, _eta=eta, _atde=atd_over_ell, _lin=phi_lin0, _bd=bd):
+                    conj = pert.conj_box(_eta + t.unsqueeze(1) * _atde, lo, hi, gamma)
+                    return _lin - t * _bd + (conj * ell).sum(dim=1)
+
+                t, _ok = armijo_backtracking_batch(
+                    phi_of_t,
+                    phi0,
+                    dderiv,
+                    c1=cfg.armijo_c1,
+                    beta=cfg.armijo_beta,
+                    max_steps=cfg.max_linesearch,
+                )
+                lam = lam + t.unsqueeze(1) * direction
+
+            eta = (v + c.rmatvec_batch(lam)) / ell
+            x_hat, interior = pert.primal_recovery(eta, lo, hi, gamma)
+            r = c.matvec_batch(x_hat) - b_batch
+            r_inf = r.abs().amax(dim=1)
+            converged = converged | (r_inf < cfg.tol)
+            if bool(converged.all()):
+                status = STATUS_CONVERGED
+            f_conj = (v * x_hat).sum(dim=1) - (ell * pert.h(x_hat, gamma)).sum(dim=1)
+
+        if cfg.warm_start:
+            self._lam_batch = lam.clone()
+
+        return PURCResult(
+            x=x_hat,
+            lam=lam,
+            success=bool(converged.all()),
+            status=status,
+            nit=nit,
+            residual=float(r_inf.max()),
+            conjugate=f_conj,
+            residual_history=history,
+            extras={
+                "n_systems": n_sys,
+                "per_system_residual": r_inf,
+                "converged_mask": converged,
                 "backend_method": self._backend.method,
                 "backend_phase": self._backend.phase,
             },

@@ -53,3 +53,20 @@ class CSRMatVec:
             native_core().csr_spmv_f64(self._indptr, self._indices, self._data, x, y)
             return y
         return self._scipy @ x
+
+    def matvec_batch(self, X: np.ndarray) -> np.ndarray:
+        """
+        Compute the batched product ``X @ A^T`` (each row of ``X`` times ``A``).
+
+        Uses SciPy's sparse-times-dense product (a single C-level call) for the
+        batch of right-hand sides; this is the OD-pair matvec.
+
+        Args:
+            X: Dense array ``[B, ncols]``.
+
+        Returns:
+            ``[B, nrows]`` with row ``b`` equal to ``A @ X[b]``.
+
+        """
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        return np.ascontiguousarray((self._scipy @ X.T).T)

@@ -192,6 +192,34 @@ class GeneralPolytope(Polytope):
         lt = as_tensor(lam, dtype=self._dtype)
         return as_tensor(self._mvT.matvec(to_numpy(lt)), device=lt.device)
 
+    def matvec_batch(self, X: torch.Tensor) -> torch.Tensor:
+        """
+        Apply ``A`` to each row of a batch ``[B, N]`` (OD-pair matvec).
+
+        Args:
+            X: Tensor of shape ``(B, N)``.
+
+        Returns:
+            ``[B, k]`` with row ``b`` equal to ``A @ X[b]``.
+
+        """
+        Xt = as_tensor(X, dtype=self._dtype)
+        return as_tensor(self._mv.matvec_batch(to_numpy(Xt)), device=Xt.device)
+
+    def rmatvec_batch(self, L: torch.Tensor) -> torch.Tensor:
+        """
+        Apply ``A^T`` to each row of a batch ``[B, k]``.
+
+        Args:
+            L: Tensor of shape ``(B, k)``.
+
+        Returns:
+            ``[B, N]`` with row ``b`` equal to ``A^T @ L[b]``.
+
+        """
+        Lt = as_tensor(L, dtype=self._dtype)
+        return as_tensor(self._mvT.matvec_batch(to_numpy(Lt)), device=Lt.device)
+
 
 def _coerce_to_scipy(A):
     """
