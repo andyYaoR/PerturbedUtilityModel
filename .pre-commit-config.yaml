@@ -1,0 +1,29 @@
+# Mirrors the PUM / LaplacianSolve hooks so the codebases stay stylistically identical.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.13
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        additional_dependencies: [toml]
+        files: '\.py$'
+        exclude: ^(tests/|docs/|examples/|experiments/|dev/|scripts/)
+  - repo: https://github.com/terrencepreilly/darglint
+    rev: v1.8.1
+    hooks:
+      - id: darglint
+        args: ["--docstring-style", "google", "--strictness", "short"]
+        files: '\.py$'
+        exclude: ^(tests/|docs/|examples/|experiments/|dev/)
+  - repo: local
+    hooks:
+      - id: check-dir-boundaries
+        name: Check directory boundaries
+        entry: python scripts/check_dir_boundaries.py
+        language: system
+        pass_filenames: false

@@ -1,0 +1,138 @@
+# Build backend: scikit-build-core + CMake + nanobind (mirrors PUM / LaplacianSolve).
+# The native core links against the user's environment; always install editable with
+#   pip install --no-build-isolation -e .
+[build-system]
+requires = ["scikit-build-core>=0.10.0", "nanobind>=2.1.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "purcsolver"
+version = "0.0.0"
+description = "Perturbed utility models with general polytope constraints, solved by a regularized semismooth Newton method."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Rui Yao", email = "rui.yao@technion.ac.il" }]
+dependencies = [
+    "numpy>=1.21.0",
+    "scipy>=1.7.0",
+    # sympy powers the symbolic perturbation compiler (auto-derive h', h'' and a
+    # closed-form inverse of h'(xi)=eta when the gradient is strictly monotone).
+    "sympy>=1.10",
+    # laplaciansolve provides the optimized, GIL-released linear solve used inside
+    # every semismooth Newton step.  It is a local sibling package; install it
+    # editable from ../LaplacianSolve before installing purcsolver.
+    "laplaciansolve>=0.0.1",
+]
+
+[project.optional-dependencies]
+# Convex reference oracle for correctness/performance cross-checks.
+oracle = ["cvxpy>=1.3.0"]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "hypothesis>=6.0.0",
+]
+dev = [
+    "purcsolver[test,oracle]",
+    "ruff>=0.4.0",
+    "pydocstyle>=6.3.0",
+    "darglint>=1.8.0",
+    "pre-commit>=3.0.0",
+]
+
+[tool.scikit-build]
+# The C++ core lives under src/purcsolver and installs into the Python package
+# directory; the pure-Python package is copied verbatim.
+cmake.source-dir = "src/purcsolver"
+wheel.install-dir = "purcsolver"
+wheel.packages = ["purcsolver"]
+cmake.build-type = "Release"
+# Re-run CMake automatically on editable-install imports when sources change.
+editable.rebuild = true
+editable.verbose = false
+build-dir = "build/{wheel_tag}"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    "docs",
+    "build",
+    "dist",
+    "examples",
+    "benchmarks",
+    "experimental",
+]
+
+[tool.ruff.lint]
+# E: pycodestyle errors, F: pyflakes, I: isort (import sorting)
+# D: pydocstyle rules (enabled for real-time checking in VS Code)
+select = ["E", "F", "I", "D"]
+ignore = [
+    "E501",  # Line too long (handled by formatter)
+    "E731",  # Lambda assignment (acceptable in some contexts)
+    "E722",  # Bare except (acceptable for optional imports)
+    "E402",  # Module level import not at top (acceptable for conditional imports)
+    "F841",  # Unused variable (common in examples/benchmarks)
+    "F401",  # Unused import (acceptable for optional imports with try/except)
+    "F811",  # Redefinition of unused (acceptable in some cases)
+    "D100",  # Missing docstring in public module (optional for test files)
+    "D101",  # Missing docstring in public class (optional for test files)
+    "D102",  # Missing docstring in public method (optional for test files)
+    "D103",  # Missing docstring in public function (optional for examples)
+    "D203",  # One blank line before class (conflicts with D211)
+    "D417",  # Missing argument description (acceptable for *args, **kwargs)
+    "D212",  # Multi-line summary on first line (Google style allows this)
+    "D200",  # One-line docstring (Google style uses multiline)
+    "D301",  # Use r""" for backslashes (we use LaTeX math like \nabla, \gamma)
+    "D205",  # Blank line after summary (Google style is flexible)
+    "D400",  # Terminal punctuation (optional in Google style)
+    "D401",  # Imperative mood (flexible in Google style)
+    "D415",  # Terminal punctuation (optional)
+    "D107",  # Missing docstring in __init__ (optional)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.pydocstyle]
+# Google-style docstring convention
+convention = "google"
+match = "(?!test_).*\\.py"
+match-dir = "(?!(\\.git|__pycache__|build|dist|docs|tests)).*"
+add-ignore = [
+    "D212",
+    "D200",
+    "D301",
+    "D205",
+    "D400",
+    "D401",
+    "D415",
+    "D107",
+]
+
+[tool.darglint]
+strictness = "short"
+docstring_style = "google"
+ignore_raise = []
+ignore_regex = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "performance: performance/benchmark tests excluded from default CI runs",
+    "native: tests that require the compiled native core (skipped when unbuilt)",
+    "oracle: tests that compare against a convex reference solver (cvxpy/scipy)",
+]
+filterwarnings = [
+    "ignore:Sparse CSR tensor support is in beta:UserWarning",
+]

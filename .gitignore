@@ -1,0 +1,51 @@
+# Byte-compiled / optimized / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build / packaging artifacts
+build/
+dist/
+wheelhouse/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Compiled native extensions
+*.so
+*.dylib
+*.pyd
+*.o
+*.obj
+*.a
+
+# CMake / scikit-build artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+build.ninja
+.ninja_deps
+.ninja_log
+.skbuild-info.json
+_skbuild/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Docs build
+docs/_build/
+docs/sphinx/_build/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Agent / local
+CLAUDE.md
+.claude/settings.local.json

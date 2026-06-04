@@ -1,0 +1,27 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install linters
+        run: python -m pip install "ruff>=0.4.0" "pydocstyle>=6.3.0" "darglint>=1.8.0" toml
+      - name: Ruff (lint)
+        run: ruff check purcsolver/ tests/ scripts/
+      - name: Ruff (format check)
+        run: ruff format --check purcsolver/ tests/ scripts/
+      - name: pydocstyle
+        run: pydocstyle purcsolver/
+      - name: darglint
+        run: darglint --docstring-style google --strictness short purcsolver/ || true
+      - name: Directory boundaries
+        run: python scripts/check_dir_boundaries.py
