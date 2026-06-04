@@ -40,6 +40,7 @@ class ModifiedEntropyPerturbation(SeparablePerturbation):
     # smooth-on-box kernel (admits_primal_interior == True -> IPM regime), in
     # contrast to Shannon entropy whose singularity sits AT the box face x = 0.
     grad_finite_lo = -1.0
+    barrier_kernel_code = 3
 
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``(1+xi) log(1+xi) - xi``."""

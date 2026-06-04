@@ -25,10 +25,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import torch
 
 from ..problem import PUMProblem
-from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor
+from ..utils.native import native_available, native_core
+from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor, to_numpy
 from ..utils.typing import ArrayLike
 
 
@@ -116,6 +118,34 @@ def recover_barrier_primal(
     midpoint = 0.5 * (a + b)
     on_bound = (x0 <= lo) | (x0 >= hi)
     x = torch.where(on_bound, midpoint, torch.minimum(torch.maximum(x0, a), b))
+
+    # Native per-coordinate root-find: each coordinate converges on its own Newton
+    # schedule (no batch-wide width gate), so the stiff-entropy fallback is ~2
+    # orders of magnitude faster than the vectorized torch loop below.
+    code = getattr(pert, "barrier_kernel_code", -1)
+    if native_available() and code >= 0:
+        n = int(x.shape[0])
+        base = torch.zeros(n, dtype=DEFAULT_DTYPE)
+        coeffs = pert.barrier_hp_coeffs(gamma) if code == 4 else np.zeros(0, dtype=np.float64)
+        x_out = np.empty(n, dtype=np.float64)
+        w_out = np.empty(n, dtype=np.float64)
+        native_core().recover_barrier_f64(
+            int(code),
+            np.ascontiguousarray(coeffs, dtype=np.float64),
+            np.ascontiguousarray(to_numpy(base + c.ell)),
+            np.ascontiguousarray(to_numpy(y)),
+            np.ascontiguousarray(to_numpy(base + as_tensor(lo))),
+            np.ascontiguousarray(to_numpy(base + as_tensor(hi))),
+            np.ascontiguousarray(to_numpy(x)),
+            float(mu),
+            float(cfg.endpoint_margin),
+            x_out,
+            w_out,
+            int(cfg.root_max_iter),
+            float(cfg.root_xtol),
+        )
+        return as_tensor(x_out), as_tensor(w_out)
+
     low = a.clone()
     high = b.clone()
 

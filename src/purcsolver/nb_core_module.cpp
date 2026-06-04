@@ -158,6 +158,96 @@ void recovery_poly_f64(Float64Arr1D coeffs, Float64Arr1D eta, Float64Arr1D lo,
   }
 }
 
+// h'(x) and h''(x) for the barrier recovery, dispatched by `kernel`:
+//   0 quadratic, 1 Shannon entropy, 2 logit/binary entropy, 3 modified entropy,
+//   4 polynomial sieve (h' coefficients in `cc`, low->high; h'' in `dc`).
+inline double bk_hp(int64_t kernel, const double* cc, int64_t deg, double x) {
+  switch (kernel) {
+    case 0: return x;
+    case 1: return 1.0 + std::log(x);
+    case 2: return std::log(x) - std::log1p(-x);
+    case 3: return std::log1p(x);
+    default: return horner(cc, deg, x);
+  }
+}
+inline double bk_hpp(int64_t kernel, const double* dc, int64_t ddeg, double x) {
+  switch (kernel) {
+    case 0: return 1.0;
+    case 1: return 1.0 / x;
+    case 2: return 1.0 / (x * (1.0 - x));
+    case 3: return 1.0 / (1.0 + x);
+    default: return (ddeg >= 0) ? horner(dc, ddeg, x) : 0.0;
+  }
+}
+
+// Per-coordinate barrier-smoothed primal recovery.  For each i, solve the
+// strictly-monotone scalar root
+//   q(x) = ell*h'(x) - y - mu/(x-lo) + mu/(hi-x) = 0   on the open box (lo, hi)
+// by safeguarded Newton, and return x and the Schur weight 1/q'(x), where
+//   q'(x) = ell*h''(x) + mu/(x-lo)^2 + mu/(hi-x)^2 > 0.
+// Unlike the vectorized torch root-find, every coordinate converges on its OWN
+// Newton schedule (no batch-wide `all(width<=tol)` gate, no shared bisection
+// cap), which is the whole point: the stiff entropy fallback stops running every
+// coordinate to max_iter.  `x0` is the per-coordinate warm start (clamped into
+// the safeguarded bracket [lo+delta, hi-delta]).
+void recover_barrier_f64(int64_t kernel, Float64Arr1D coeffs, Float64Arr1D ell,
+                         Float64Arr1D y, Float64Arr1D lo, Float64Arr1D hi,
+                         Float64Arr1D x0, double mu, double endpoint_margin,
+                         Float64MutArr1D x_out, Float64MutArr1D w_out,
+                         int64_t max_iter, double xtol) {
+  const int64_t n = static_cast<int64_t>(y.shape(0));
+  const int64_t deg = static_cast<int64_t>(coeffs.shape(0)) - 1;
+  const double* cc = coeffs.data();
+  const double* ellp = ell.data();
+  const double* yp = y.data();
+  const double* lp = lo.data();
+  const double* hp = hi.data();
+  const double* x0p = x0.data();
+  double* xo = x_out.data();
+  double* wo = w_out.data();
+
+  // sieve h'' coefficients dc[k] = (k+1) c[k+1], degree deg-1.
+  std::vector<double> dc(deg > 0 ? static_cast<std::size_t>(deg) : 1, 0.0);
+  for (int64_t k = 0; k < deg; ++k) dc[k] = (k + 1) * cc[k + 1];
+  const double* dcp = dc.data();
+  const int64_t ddeg = deg - 1;
+  const double tiny = 2.220446049250313e-16;
+
+  nb::gil_scoped_release release;
+  for (int64_t i = 0; i < n; ++i) {
+    const double L = lp[i], H = hp[i], el = ellp[i], yi = yp[i];
+    const double gap = H - L;
+    double delta = gap * endpoint_margin;
+    if (delta < tiny) delta = tiny;
+    if (delta > 0.25 * gap) delta = 0.25 * gap;
+    double a = L + delta, b = H - delta;
+    double x = x0p[i];
+    if (!(x > a)) x = a;
+    if (!(x < b)) x = b;
+    // Safeguarded Newton with a BRACKET-WIDTH stopping test.  A step-size test is
+    // unsafe here: near a bound q'(x)=ell*h''+mu/(x-lo)^2+mu/(hi-x)^2 blows up, so
+    // the Newton step -q/q' is tiny even far from the root -- a step test would
+    // stop at the wrong point.  Bracketing on the sign of the monotone q is the
+    // robust criterion (matches the torch reference, per-coordinate).
+    for (int64_t it = 0; it < max_iter; ++it) {
+      const double xl = x - L, xh = H - x;
+      const double q = el * bk_hp(kernel, cc, deg, x) - yi - mu / xl + mu / xh;
+      if (q > 0.0) b = x; else a = x;
+      const double qp =
+          el * bk_hpp(kernel, dcp, ddeg, x) + mu / (xl * xl) + mu / (xh * xh);
+      double xn = x - q / qp;
+      if (!(xn > a && xn < b) || !std::isfinite(xn)) xn = 0.5 * (a + b);
+      x = xn;
+      if ((b - a) <= xtol * (1.0 + gap)) break;
+    }
+    const double xl = x - L, xh = H - x;
+    const double qp =
+        el * bk_hpp(kernel, dcp, ddeg, x) + mu / (xl * xl) + mu / (xh * xh);
+    xo[i] = x;
+    wo[i] = 1.0 / qp;
+  }
+}
+
 }  // namespace
 
 NB_MODULE(_purcsolver_core, m) {
@@ -175,4 +265,9 @@ NB_MODULE(_purcsolver_core, m) {
         "hi"_a, "xi_out"_a, "interior_out"_a, "max_iter"_a = 80,
         "xtol"_a = 1e-14,
         "Invert a monotone polynomial h'(xi)=eta on [lo,hi] (GIL released).");
+  m.def("recover_barrier_f64", &recover_barrier_f64, "kernel"_a, "coeffs"_a,
+        "ell"_a, "y"_a, "lo"_a, "hi"_a, "x0"_a, "mu"_a, "endpoint_margin"_a,
+        "x_out"_a, "w_out"_a, "max_iter"_a = 80, "xtol"_a = 1e-13,
+        "Per-coordinate barrier-smoothed primal recovery x and weight 1/q' "
+        "(GIL released); kernel 0=quad 1=entropy 2=logit 3=mod-entropy 4=sieve.");
 }

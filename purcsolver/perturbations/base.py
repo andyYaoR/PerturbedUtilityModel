@@ -29,6 +29,7 @@ import math
 from abc import ABC, abstractmethod
 from typing import Any, Tuple
 
+import numpy as np
 import torch
 
 from ..utils.torch_compat import as_tensor
@@ -63,6 +64,27 @@ class SeparablePerturbation(ABC):
     default_domain: Tuple[float, float] = (0.0, 1.0)
     grad_finite_lo: float = -math.inf
     grad_finite_hi: float = math.inf
+    # Selector for the native barrier-recovery kernel ``recover_barrier_f64``:
+    # 0 quadratic, 1 Shannon entropy, 2 logit entropy, 3 modified entropy,
+    # 4 polynomial sieve.  ``-1`` means no native kernel -> torch root-find.
+    barrier_kernel_code: int = -1
+
+    def barrier_hp_coeffs(self, params: Any) -> np.ndarray:
+        """
+        ``h'`` polynomial coefficients (low->high) for the native barrier kernel.
+
+        Only the polynomial sieve (code 4) needs these; other kernels evaluate
+        ``h'``/``h''`` analytically inside the native kernel and ignore them.
+
+        Args:
+            params: Perturbation parameters ``gamma``.
+
+        Returns:
+            The ``h'`` coefficient array (empty for non-sieve kernels).
+
+        """
+        del params
+        return np.zeros(0, dtype=np.float64)
 
     def admits_primal_interior(self, lo: ArrayLike, hi: ArrayLike) -> bool:
         r"""

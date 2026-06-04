@@ -58,3 +58,49 @@ def test_recovery_native_vs_rootfind(gamma):
     )
     np.testing.assert_allclose(to_numpy(xi_native), to_numpy(xi_ref), atol=1e-9)
     np.testing.assert_array_equal(to_numpy(int_native), to_numpy(int_ref))
+
+
+@pytest.mark.parametrize(
+    "name,gamma",
+    [
+        ("quadratic", np.zeros(0)),
+        ("entropy", np.zeros(0)),
+        ("logit_entropy", np.zeros(0)),
+        ("modified_entropy", np.zeros(0)),
+        ("polynomial_sieve", np.array([0.3, 0.1])),
+    ],
+)
+@pytest.mark.parametrize("mu", [1.0, 1e-3, 1e-6])
+def test_barrier_recovery_native_vs_torch(name, gamma, mu):
+    """The native ``recover_barrier_f64`` matches the torch root-find for every kernel."""
+    _require_native()
+    import scipy.sparse as sp
+
+    import purcsolver.solvers.barrier as barrier
+    from purcsolver import PUMProblem
+    from purcsolver.constraints import GeneralPolytope
+    from purcsolver.perturbations import get_perturbation
+
+    inc = np.array(
+        [[1, 0, 0, 1, 0], [-1, 1, 0, 0, 1], [0, -1, 1, -1, 0], [0, 0, -1, 0, -1]], float
+    )
+    rng = np.random.default_rng(0)
+    ell = rng.uniform(0.5, 2.0, inc.shape[1])
+    pert = (
+        get_perturbation(name, gamma=gamma)
+        if name == "polynomial_sieve"
+        else get_perturbation(name)
+    )
+    prob = PUMProblem(pert, GeneralPolytope(sp.csr_matrix(inc), np.array([1.0, 0.0, 0.0, -1.0]), ell=ell))
+    v = -rng.uniform(0.5, 3.0, inc.shape[1])
+    lam = rng.standard_normal(inc.shape[0]) * 1.5
+
+    x_native, w_native = barrier.recover_barrier_primal(prob, v, lam, gamma, mu)
+    saved = barrier.native_available
+    barrier.native_available = lambda: False  # force the torch fallback
+    try:
+        x_torch, w_torch = barrier.recover_barrier_primal(prob, v, lam, gamma, mu)
+    finally:
+        barrier.native_available = saved
+    np.testing.assert_allclose(to_numpy(x_native), to_numpy(x_torch), atol=1e-8)
+    np.testing.assert_allclose(to_numpy(w_native), to_numpy(w_torch), rtol=1e-3, atol=1e-6)

@@ -49,6 +49,7 @@ class PolynomialSievePerturbation(SeparablePerturbation):
     has_closed_form_recovery = False
     cvxpy_expressible = False
     default_domain = (0.0, 1.0)
+    barrier_kernel_code = 4
 
     def __init__(self, gamma: ArrayLike | None = None) -> None:
         self.gamma = (
@@ -172,3 +173,7 @@ class PolynomialSievePerturbation(SeparablePerturbation):
     def gamma_feasible(self, params: Any) -> bool:
         """Return whether ``params`` satisfies the Bernstein condition ``M gamma >= -1``."""
         return is_convex(to_numpy(self._coeffs(params)))
+
+    def barrier_hp_coeffs(self, params: Any) -> np.ndarray:
+        """Return the ``h'`` coefficients ``[0, 1, gamma_3, ...]`` for the native barrier kernel."""
+        return np.concatenate([[0.0, 1.0], to_numpy(self._coeffs(params))]).astype(np.float64)

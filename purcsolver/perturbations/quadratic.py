@@ -30,6 +30,7 @@ class QuadraticPerturbation(SeparablePerturbation):
 
     has_closed_form_recovery = True
     cvxpy_expressible = True
+    barrier_kernel_code = 0
 
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``xi^2 / 2``."""
