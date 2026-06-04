@@ -8,10 +8,11 @@ Newton system SPD and bounds the nullspace step, and the recovered primal ``x*``
 is gauge-invariant regardless.  The only feasibility precondition we check is
 ``b in range(A)`` (otherwise the residual can never reach zero).
 
-The matrix is held in two zero-copy-bridged forms: a SciPy CSR for the SciPy-only
-consumers (the CSC pattern build, feasibility, the cvxpy oracle), and torch
-sparse-CSR tensors for ``A``/``A^T`` so the torch-native solver's matvecs stay on
-the solver's device/dtype.
+The matrix is held as a SciPy CSR (for the SciPy-only consumers: the CSC pattern
+build, feasibility, the cvxpy oracle) plus a :class:`~purcsolver.utils.spmv.CSRMatVec`
+for ``A`` and ``A^T`` (the native CSR SpMV used for the hot-path matvecs).  Node-arc
+incidence structure is auto-detected so the solver can route to LaplacianSolve's
+fast ``PURCLaplacianSolver`` network path.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import numpy as np
 import scipy.sparse as sp
 import torch
 
+from ..utils.sparse import detect_incidence as _detect_incidence
 from ..utils.sparse import in_range, row_components, to_csr
 from ..utils.spmv import CSRMatVec
 from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor, to_numpy
@@ -43,6 +45,9 @@ class GeneralPolytope(Polytope):
             (default ``1``).
         validate: If ``True``, check ``b in range(A)`` and ``ell > 0`` on
             construction and raise on violation.
+        detect_incidence: If ``True`` (default), auto-detect node-arc incidence
+            structure so the solver can route to LaplacianSolve's fast
+            ``PURCLaplacianSolver`` network path.
 
     Raises:
         ValueError: If shapes are inconsistent, ``ell`` is not positive, or
@@ -61,10 +66,16 @@ class GeneralPolytope(Polytope):
         ell: ArrayLike = 1.0,
         *,
         validate: bool = True,
+        detect_incidence: bool = True,
     ) -> None:
         self._A_scipy = to_csr(_coerce_to_scipy(A))
         k, n = self._A_scipy.shape
         self._dtype = DEFAULT_DTYPE
+        # Auto-detect node-arc incidence -> enables the PURCLaplacianSolver path.
+        self._edges: Optional[np.ndarray] = None
+        self.is_incidence = False
+        if detect_incidence:
+            self.is_incidence, self._edges = _detect_incidence(self._A_scipy)
         # Native CSR SpMV for the hot-path matvecs (A x_hat and A^T lambda).
         self._mv = CSRMatVec(self._A_scipy)
         self._mvT = CSRMatVec(self._A_scipy.T.tocsr())
@@ -124,6 +135,16 @@ class GeneralPolytope(Polytope):
     @property
     def num_constraints(self) -> int:
         """Number of equality rows ``k``."""
+        return self._A_scipy.shape[0]
+
+    @property
+    def edges(self) -> Optional[np.ndarray]:
+        """The ``(N, 2)`` edge endpoints if ``A`` is incidence, else ``None``."""
+        return self._edges
+
+    @property
+    def n_nodes(self) -> int:
+        """Number of nodes (equality rows) for the incidence network path."""
         return self._A_scipy.shape[0]
 
     @property

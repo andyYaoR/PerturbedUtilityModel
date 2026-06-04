@@ -49,14 +49,31 @@ class LaplacianBackend:
         polytope: Polytope,
         laplacian_options: Optional[Dict[str, Any]] = None,
     ) -> None:
-        if polytope.is_incidence:
-            # The incidence/network fast path (PURCLaplacianSolver) lands in
-            # v0.4.0; for now incidence matrices go through the general path too.
-            _logger.debug("incidence fast path not yet enabled; using general SDDM path")
-        self.assembler = CSCAssembler(polytope.A)
+        opts = dict(laplacian_options or {})
         self.k = polytope.num_constraints
-        self._options = self._resolve_options(laplacian_options or {})
-        self._solver = None  # built lazily on first solve (needs a sample M)
+        self._solver = None  # general path: built lazily on first solve
+
+        if getattr(polytope, "is_incidence", False) and polytope.edges is not None:
+            # Network fast path: hand the edge list to PURCLaplacianSolver, which
+            # fuses assembly + solve in one GIL-released native call and routes to
+            # forest (acyclic) or CHOLMOD.  Let it auto-route (do not force cholmod).
+            from laplaciansolve import PURCLaplacianSolver, SolverConfig
+
+            self.kind = "purc"
+            self._purc = PURCLaplacianSolver(
+                polytope.edges, n_nodes=polytope.n_nodes, config=SolverConfig(**opts)
+            )
+            self.method = self._purc.method
+            self.phase = self._purc.phase
+            _logger.debug("incidence detected: using PURCLaplacianSolver (%s)", self.method)
+        else:
+            # General path: assemble M and drive SDDMSolver (CHOLMOD by default,
+            # since a general A diag(w) A^T need not be an M-matrix).
+            self.kind = "sddm"
+            self.assembler = CSCAssembler(polytope.A)
+            self._options = self._resolve_options(opts)
+            self.method = self._options.get("method")
+            self.phase = None
 
     @staticmethod
     def _resolve_options(options: Dict[str, Any]) -> Dict[str, Any]:
@@ -98,6 +115,12 @@ class LaplacianBackend:
             The Newton step ``d`` as a torch tensor, shape ``(k,)``.
 
         """
+        if self.kind == "purc":
+            # One GIL-released native call: assemble C diag(w) C^T + eps I and
+            # solve.  Inactive edges carry weight 0 (folded by the SSN solver).
+            res = self._purc.solve_step(to_numpy(w), eps=float(eps), rhs=to_numpy(rhs))
+            return as_tensor(res["solution"])
+
         from laplaciansolve import SDDMSolver, SolverConfig
 
         M = self.assembler.assemble(to_numpy(w), float(eps))

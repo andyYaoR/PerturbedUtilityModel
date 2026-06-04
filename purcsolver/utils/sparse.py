@@ -9,7 +9,7 @@ residual can ever reach zero.
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import scipy.sparse as sp
@@ -60,6 +60,42 @@ def row_components(A: sp.csr_matrix) -> Tuple[int, np.ndarray]:
     row_adj = (A @ A.T).tocsr()
     n_comp, labels = connected_components(row_adj, directed=False)
     return n_comp, labels
+
+
+def detect_incidence(A: sp.csr_matrix) -> Tuple[bool, Optional[np.ndarray]]:
+    """
+    Detect whether ``A`` is a node-arc incidence matrix and return its edges.
+
+    ``A`` (``k`` nodes x ``N`` edges) is an incidence matrix iff every column has
+    exactly two nonzeros equal to ``+1`` and ``-1``.  When so, the per-edge
+    Newton system ``A diag(D) A^T + eps I`` is a weighted graph Laplacian and can
+    be routed to LaplacianSolve's specialized ``PURCLaplacianSolver`` (fused
+    native assembly + solve, forest fast path).
+
+    Args:
+        A: The ``(k, N)`` constraint matrix (CSR).
+
+    Returns:
+        ``(is_incidence, edges)`` where ``edges`` is an ``(N, 2)`` int64 array of
+        the two endpoint nodes per edge (in column order), or ``None`` if ``A`` is
+        not an incidence matrix.
+
+    """
+    Acsc = A.tocsc()
+    indptr, indices, data = Acsc.indptr, Acsc.indices, Acsc.data
+    n_edges = Acsc.shape[1]
+    edges = np.empty((n_edges, 2), dtype=np.int64)
+    for j in range(n_edges):
+        seg = slice(indptr[j], indptr[j + 1])
+        rows = indices[seg]
+        vals = data[seg]
+        if rows.size != 2:
+            return False, None
+        order = np.argsort(vals)
+        if not (np.isclose(vals[order[0]], -1.0) and np.isclose(vals[order[1]], 1.0)):
+            return False, None
+        edges[j] = rows
+    return True, edges
 
 
 def in_range(A: sp.csr_matrix, b: np.ndarray, tol: float = 1e-8) -> bool:

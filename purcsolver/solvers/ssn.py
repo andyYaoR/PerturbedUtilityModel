@@ -238,7 +238,8 @@ class RegularizedSSNSolver(ForwardSolver):
             extras={
                 "active_set_size": int(interior.sum()),
                 "linesearch_steps": ls_steps,
-                "backend_method": self._backend._options.get("method"),
+                "backend_method": self._backend.method,
+                "backend_phase": self._backend.phase,
             },
         )
 
