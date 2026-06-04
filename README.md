@@ -47,15 +47,21 @@ local Q-quadratic convergence; an Armijo line search on the dual globalizes it.
 
 - **v0.0.0 (M0)** — scaffold, build system, registries, abstract interfaces, core
   dataclasses, GIL-released native smoke kernel.
-- **v0.1.0 (current)** — working forward solver on **fully general** polytopes
-  (rank-deficient `A` supported via the `ε`-regularization — no gauge module
-  needed). Closed-form perturbations (quadratic, Shannon/binary entropy, modified
-  entropy); `GeneralPolytope`; `RegularizedSSNSolver` driving LaplacianSolve's
-  CHOLMOD SDDM solver via the fixed-pattern `CSCAssembler`; CVXPY + independent
-  scipy oracles. Validated against CVXPY (Clarabel) to `~1e-6`.
+- **v0.1.0** — forward solver on **fully general** polytopes (rank-deficient `A`
+  via the `ε`-regularization — no gauge module needed). Closed-form perturbations
+  (quadratic, Shannon/binary entropy, modified entropy); `GeneralPolytope`;
+  `RegularizedSSNSolver` driving LaplacianSolve's CHOLMOD SDDM solver via the
+  fixed-pattern `CSCAssembler`; CVXPY + independent scipy oracles.
+- **v0.2.0 (current)** — the **polynomial sieve** (the paper's semi-nonparametric
+  kernel) with Bernstein convexity certificate `Mγ ≥ −1`, vectorized
+  safeguarded-Newton recovery, and the **symbolic compiler**: from a SymPy `h` it
+  auto-derives `h'`,`h''`, certifies convexity, and builds a closed-form inverse of
+  `h'(ξ)=η` when one exists (else falls back to the root-find). Sieve solves match
+  the independent scipy dual oracle to `~1e-15`; closed-form vs root-find agree to
+  `~1e-9`.
 
-Next: the polynomial sieve + symbolic compiler (v0.2.0), then the native compiled
-recovery kernels (v0.3.0). See the staged plan.
+Next: native compiled recovery kernels — both a parameterized C++ kernel and the
+runtime-codegen path, cross-checked for performance (v0.3.0). See the staged plan.
 
 ### Quick example
 
