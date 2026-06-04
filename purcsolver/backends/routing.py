@@ -52,6 +52,7 @@ class LaplacianBackend:
         opts = dict(laplacian_options or {})
         self.k = polytope.num_constraints
         self._solver = None  # general path: built lazily on first solve
+        self._prep: Optional[tuple] = None  # PURC path: cached (w, eps) for solve_prepared
 
         purc = None
         if getattr(polytope, "is_incidence", False) and polytope.edges is not None:
@@ -144,6 +145,61 @@ class LaplacianBackend:
         # buffer) and restores the solution to the same type/dtype/device.
         sol = self._solver.solve(as_tensor(rhs))
         return as_tensor(sol)
+
+    def prepare(self, w: torch.Tensor, eps: float) -> None:
+        """
+        Factorize ``A diag(w) A^T + eps I`` once for reuse across right-hand sides.
+
+        The Mehrotra predictor-corrector IPM solves two systems with the *same*
+        matrix (predictor and corrector) but different RHS per iteration; calling
+        :meth:`prepare` once then :meth:`solve_prepared` twice does a single
+        numeric factorization instead of two.
+
+        Args:
+            w: Per-coordinate weights, shape ``(N,)``.
+            eps: Diagonal regularizer (``> 0``).
+
+        """
+        if self.kind == "purc":
+            # PURCLaplacianSolver fuses assembly+factor+solve in one native call and
+            # exposes no separate factor phase; cache (w, eps) and let
+            # solve_prepared re-run the fused call.  The network fast path (forest /
+            # already-cheap CHOLMOD) is the path where this matters least.
+            self._prep = (to_numpy(w), float(eps))
+            return
+        from laplaciansolve import SDDMSolver, SolverConfig
+
+        M = self.assembler.assemble(to_numpy(w), float(eps))
+        if self._solver is None:
+            self._solver = SDDMSolver(M, config=SolverConfig(**self._options))
+        else:
+            # Same sparsity pattern across iterations -> reuse the symbolic phase,
+            # redo only the numeric factorization.
+            self._solver.update(M)
+
+    def solve_prepared(self, rhs: torch.Tensor) -> torch.Tensor:
+        """
+        Solve against the factorization built by the last :meth:`prepare`.
+
+        Args:
+            rhs: Right-hand side, shape ``(k,)``.
+
+        Returns:
+            The Newton step ``d`` as a torch tensor, shape ``(k,)``.
+
+        Raises:
+            RuntimeError: If called before :meth:`prepare`.
+
+        """
+        if self.kind == "purc":
+            if self._prep is None:
+                raise RuntimeError("call prepare(w, eps) before solve_prepared(rhs)")
+            w, eps = self._prep
+            res = self._purc.solve_step(w, eps=eps, rhs=to_numpy(rhs))
+            return as_tensor(res["solution"])
+        if self._solver is None:
+            raise RuntimeError("call prepare(w, eps) before solve_prepared(rhs)")
+        return as_tensor(self._solver.solve(as_tensor(rhs)))
 
     def solve_batch(
         self, weights: torch.Tensor, eps: torch.Tensor, rhs: torch.Tensor
