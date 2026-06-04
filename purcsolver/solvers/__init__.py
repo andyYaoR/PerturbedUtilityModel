@@ -35,4 +35,8 @@ def get_solver(name: str, **kwargs: Any) -> ForwardSolver:
     return SOLVERS[name](**kwargs)
 
 
-__all__ = ["ForwardSolver", "SOLVERS", "get_solver"]
+__all__ = ["ForwardSolver", "SOLVERS", "get_solver", "RegularizedSSNSolver"]
+
+# Import concrete solvers for their registration side effects (kept at the
+# bottom so SOLVERS / ForwardSolver are defined before ssn imports them).
+from .ssn import RegularizedSSNSolver  # noqa: E402

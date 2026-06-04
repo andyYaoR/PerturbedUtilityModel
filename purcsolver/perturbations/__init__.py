@@ -67,3 +67,7 @@ __all__ = [
     "register_perturbation",
     "get_perturbation",
 ]
+
+# Import concrete kernels for their registration side effects.  Kept at the
+# bottom so ``register_perturbation`` is defined before these modules import it.
+from . import entropy, modified_entropy, quadratic  # noqa: E402,F401

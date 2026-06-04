@@ -10,5 +10,6 @@ incidence structure and select the network fast path.
 from __future__ import annotations
 
 from .base import Polytope
+from .general import GeneralPolytope
 
-__all__ = ["Polytope"]
+__all__ = ["Polytope", "GeneralPolytope"]

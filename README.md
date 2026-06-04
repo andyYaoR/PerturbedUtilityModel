@@ -45,10 +45,36 @@ local Q-quadratic convergence; an Armijo line search on the dual globalizes it.
 
 ## Status
 
-**M0 (scaffold + native toolchain)** — repo, build system, registries, abstract
-interfaces, core dataclasses, and a GIL-released native smoke kernel that proves
-the end-to-end build path. Concrete perturbations, constraints, and the SSN
-solver land in M1+ (see the staged plan).
+- **v0.0.0 (M0)** — scaffold, build system, registries, abstract interfaces, core
+  dataclasses, GIL-released native smoke kernel.
+- **v0.1.0 (current)** — working forward solver on **fully general** polytopes
+  (rank-deficient `A` supported via the `ε`-regularization — no gauge module
+  needed). Closed-form perturbations (quadratic, Shannon/binary entropy, modified
+  entropy); `GeneralPolytope`; `RegularizedSSNSolver` driving LaplacianSolve's
+  CHOLMOD SDDM solver via the fixed-pattern `CSCAssembler`; CVXPY + independent
+  scipy oracles. Validated against CVXPY (Clarabel) to `~1e-6`.
+
+Next: the polynomial sieve + symbolic compiler (v0.2.0), then the native compiled
+recovery kernels (v0.3.0). See the staged plan.
+
+### Quick example
+
+```python
+import numpy as np, scipy.sparse as sp
+from purcsolver import PUMProblem, SSNConfig
+from purcsolver.constraints import GeneralPolytope
+from purcsolver.perturbations import get_perturbation
+from purcsolver.solvers import RegularizedSSNSolver
+
+A = sp.csr_matrix(np.ones((1, 5)))          # sum(x) = 1
+poly = GeneralPolytope(A, b=np.array([1.0]), lo=0.0, hi=1.0)
+prob = PUMProblem(get_perturbation("entropy"), poly)
+
+solver = RegularizedSSNSolver(SSNConfig(tol=1e-11))
+solver.preprocess(prob)
+res = solver.solve((np.array([0.1, -0.4, 0.7, 0.2, -0.1]), np.array([])))
+print(res.x, res.success, res.nit)
+```
 
 ## Install (development)
 

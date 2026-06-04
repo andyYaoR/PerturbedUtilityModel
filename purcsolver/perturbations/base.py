@@ -64,9 +64,33 @@ class SeparablePerturbation(ABC):
     def hsecond(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Second derivative ``h''(xi; gamma) > 0`` on the interior."""
 
-    @abstractmethod
-    def conj(self, eta: ArrayLike, params: Any) -> ArrayLike:
-        """Per-coordinate convex conjugate ``h*(eta) = max_xi (eta*xi - h(xi))``."""
+    def conj_box(
+        self,
+        eta: ArrayLike,
+        lo: ArrayLike,
+        hi: ArrayLike,
+        params: Any,
+    ) -> ArrayLike:
+        """
+        Box-restricted convex conjugate ``h*(eta) = max_{lo<=xi<=hi}(eta*xi - h(xi))``.
+
+        This is the per-coordinate term of the dual objective ``phi(lambda) =
+        b^T lambda + sum_i ell_i h*(eta_i)``.  The default evaluates it from
+        :meth:`primal_recovery` and :meth:`h` (``eta*xi* - h(xi*)``), which is
+        exact for any box; subclasses with a cheaper closed form may override.
+
+        Args:
+            eta: Reduced utilities, any broadcastable shape.
+            lo: Lower box bounds.
+            hi: Upper box bounds.
+            params: Perturbation parameters ``gamma``.
+
+        Returns:
+            The box-restricted conjugate values, same shape as ``eta``.
+
+        """
+        xi_star, _ = self.primal_recovery(eta, lo, hi, params)
+        return eta * xi_star - self.h(xi_star, params)
 
     @abstractmethod
     def primal_recovery(
@@ -108,6 +132,27 @@ class SeparablePerturbation(ABC):
 
         """
         return 1.0 / self.hsecond(xi_star, params)
+
+    def cvxpy_h(self, x: Any, params: Any) -> Any:
+        """
+        Return the elementwise CVXPY expression for ``h(x)`` (the oracle hook).
+
+        Only meaningful when :attr:`cvxpy_expressible` is ``True``.  Used by the
+        CVXPY reference oracle to build the equivalent convex program; ``x`` is a
+        ``cvxpy.Variable``.
+
+        Args:
+            x: A ``cvxpy.Variable`` of shape ``(N,)``.
+            params: Perturbation parameters ``gamma``.
+
+        Raises:
+            NotImplementedError: If the kernel is not DCP-expressible.
+
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not provide a CVXPY expression; "
+            "use the scipy oracle instead."
+        )
 
     def gamma_feasible(self, params: Any) -> bool:
         """
