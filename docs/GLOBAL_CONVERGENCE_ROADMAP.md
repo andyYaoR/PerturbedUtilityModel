@@ -224,6 +224,23 @@ either a Phase-I strict-feasibility routine, a reduced-coordinate barrier over
 coordinates that admit interior movement, or a documented fallback when Slater
 fails.
 
+Prototype evidence:
+
+- `dev/prototype_barrier_chicago.py` implements the fixed-`mu` smooth dual
+  barrier subproblem with generic monotone scalar recovery, Armijo descent on the
+  barrier dual objective, the existing `LaplacianBackend`, and a final exact SSN
+  polish at `mu=0`.
+- On the hard benchmark
+  `python dev/prototype_barrier_chicago.py regional --perturbation sieve --beta 5
+  --n-od 3 --max-outer 8 --max-inner 80`, all three Regional OD pairs converged:
+  residuals `2.3e-11`, `2.0e-10`, and `1.6e-11` after the exact polish. The
+  baseline LM-SSN run on the same case had `0/3` converged.
+- The prototype is not yet fast enough for production: the three OD solves took
+  about `33s`, `26s`, and `20s`, with `92`, `79`, and `59` fixed-`mu` inner
+  iterations before polish. The encouraging signal is algorithmic, not runtime:
+  line searches accepted full steps throughout this run, and the final exact SSN
+  polish took `36`, `44`, and `5` iterations.
+
 Candidate B: proximal dual continuation.
 
 Solve a sequence of strongly convex dual subproblems
