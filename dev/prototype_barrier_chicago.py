@@ -24,8 +24,13 @@ from purcsolver import PUMProblem, SSNConfig
 from purcsolver.backends.routing import LaplacianBackend
 from purcsolver.constraints import GeneralPolytope
 from purcsolver.perturbations import get_perturbation
+from purcsolver.solvers.barrier import (
+    BarrierRecoveryConfig,
+    barrier_dual_objective,
+    recover_barrier_primal,
+)
 from purcsolver.solvers import RegularizedSSNSolver
-from purcsolver.utils.torch_compat import DEFAULT_DTYPE, as_tensor
+from purcsolver.utils.torch_compat import as_tensor
 from tntp import load_net
 
 DATA = "/Users/ruiyao/Library/CloudStorage/Dropbox/Technion/Codes/LaplacianSolve/examples/data/"
@@ -83,67 +88,12 @@ def barrier_recovery(
     mu: float,
     cfg: BarrierConfig,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Recover interior ``x(lambda, mu)`` and Newton weights for the log barrier.
-
-    The scalar equation is
-
-        ell h'(x) - v - A^T lambda - mu/(x-lo) + mu/(hi-x) = 0.
-
-    Its derivative is positive, so safeguarded Newton on the open box is
-    globally well defined up to floating-point endpoint resolution.
-    """
-    c = problem.constraint
-    pert = problem.perturbation
-    y = v + c.rmatvec(lam)
-    lo = c.lo
-    hi = c.hi
-    if bool((~torch.isfinite(lo)).any() or (~torch.isfinite(hi)).any()):
-        raise ValueError("prototype barrier requires finite box bounds")
-
-    gap = hi - lo
-    tiny = torch.finfo(DEFAULT_DTYPE).eps
-    delta = torch.clamp(gap * 1e-14, min=tiny)
-    delta = torch.minimum(delta, 0.25 * gap)
-    a = lo + delta
-    b = hi - delta
-
-    def q_and_qp(z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        left = z - lo
-        right = hi - z
-        q = c.ell * pert.hprime(z, gamma) - y - mu / left + mu / right
-        qp = c.ell * pert.hsecond(z, gamma) + mu / (left * left) + mu / (right * right)
-        return q, qp
-
-    # Interpolate from the unbarriered target when possible; it is only a start.
-    # If the unbarriered recovery is on a bound, start at the midpoint.  Near a
-    # log-barrier endpoint Newton steps can be tiny while still far from the
-    # root, so endpoint starts interact badly with step-size stopping criteria.
-    eta = y / c.ell
-    x0, _ = pert.primal_recovery(eta, lo, hi, gamma)
-    midpoint = 0.5 * (a + b)
-    on_bound = (x0 <= lo) | (x0 >= hi)
-    x = torch.where(on_bound, midpoint, torch.minimum(torch.maximum(x0, a), b))
-    low = a.clone()
-    high = b.clone()
-
-    for _ in range(cfg.root_max_iter):
-        q, qp = q_and_qp(x)
-        high = torch.where(q > 0, x, high)
-        low = torch.where(q <= 0, x, low)
-
-        x_newton = x - q / qp
-        out = (~torch.isfinite(x_newton)) | (x_newton <= low) | (x_newton >= high)
-        x_next = torch.where(out, 0.5 * (low + high), x_newton)
-        x = x_next
-        width = high - low
-        if bool(torch.all(width <= cfg.root_xtol * (1.0 + gap))):
-            break
-
-    x = torch.minimum(torch.maximum(x, a), b)
-    _, qp = q_and_qp(x)
-    weight = 1.0 / qp
-    return x, weight
+    """Recover interior ``x(lambda, mu)`` and Newton weights for the log barrier."""
+    recovery_cfg = BarrierRecoveryConfig(
+        root_max_iter=cfg.root_max_iter,
+        root_xtol=cfg.root_xtol,
+    )
+    return recover_barrier_primal(problem, v, lam, gamma, mu, recovery_cfg)
 
 
 def barrier_phi(
@@ -156,12 +106,7 @@ def barrier_phi(
     x: torch.Tensor,
 ) -> float:
     """Evaluate the convex dual objective for the fixed-mu barrier subproblem."""
-    c = problem.constraint
-    y = v + c.rmatvec(lam)
-    pert = problem.perturbation
-    log_barrier = torch.log(x - c.lo) + torch.log(c.hi - x)
-    val = -(b_rhs @ lam) + torch.sum(y * x - c.ell * pert.h(x, gamma) + mu * log_barrier)
-    return float(val)
+    return barrier_dual_objective(problem, v, lam, b_rhs, gamma, mu, x=x)
 
 
 def solve_barrier_path(
@@ -176,7 +121,7 @@ def solve_barrier_path(
     v = as_tensor(v_np).reshape(-1)
     b_rhs = as_tensor(b_np).reshape(-1)
     gamma = as_tensor(gamma_np).reshape(-1)
-    lam = torch.zeros(problem.constraint.num_constraints, dtype=DEFAULT_DTYPE)
+    lam = torch.zeros(problem.constraint.num_constraints, dtype=torch.float64)
     scale = float(torch.median(torch.abs(v) + problem.constraint.ell)) + 1.0
     mu = scale
     stages = []
