@@ -38,6 +38,10 @@ class EntropyPerturbation(SeparablePerturbation):
     has_closed_form_recovery = True
     cvxpy_expressible = True
     default_domain = (0.0, 1.0)
+    # Legendre type at the lower bound: h'(xi) = 1 + log xi -> -inf as xi -> 0+,
+    # so a primal box barrier at x = 0 is ill posed; solve in the dual.  h'(1) = 1
+    # is finite, so the gradient stays finite for all xi > 0 (grad_finite_hi = +inf).
+    grad_finite_lo = 0.0
 
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``xi log xi`` (with the ``0 log 0 = 0`` limit)."""
@@ -90,6 +94,11 @@ class LogitEntropyPerturbation(SeparablePerturbation):
     has_closed_form_recovery = True
     cvxpy_expressible = True
     default_domain = (0.0, 1.0)
+    # Legendre type at BOTH bounds: h'(xi) = log(xi/(1-xi)) -> -inf at 0+ and
+    # +inf at 1-.  The solution is provably interior and a primal box barrier is
+    # ill posed at either face; solve in the dual.
+    grad_finite_lo = 0.0
+    grad_finite_hi = 1.0
 
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``xi log xi + (1-xi) log(1-xi)`` (with corner limits = 0)."""

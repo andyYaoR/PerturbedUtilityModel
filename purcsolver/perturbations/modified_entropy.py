@@ -34,6 +34,12 @@ class ModifiedEntropyPerturbation(SeparablePerturbation):
     has_closed_form_recovery = True
     cvxpy_expressible = True
     default_domain = (0.0, 1.0)
+    # h'(xi) = log(1 + xi) is finite on (-1, +inf); the Legendre singularity sits
+    # at xi = -1, OUTSIDE the standard box [0, 1].  So on [0, 1] the gradient is
+    # finite at both faces (h'(0) = 0, h'(1) = log 2): this is a saturating
+    # smooth-on-box kernel (admits_primal_interior == True -> IPM regime), in
+    # contrast to Shannon entropy whose singularity sits AT the box face x = 0.
+    grad_finite_lo = -1.0
 
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``(1+xi) log(1+xi) - xi``."""

@@ -25,6 +25,7 @@ symbolic ``perturbations/compiler.py``, added in M3).
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from typing import Any, Tuple
 
@@ -46,12 +47,51 @@ class SeparablePerturbation(ABC):
         has_closed_form_recovery: ``True`` if ``xi*(eta)`` is closed form.
         cvxpy_expressible: ``True`` if ``F`` can be written in CVXPY/DCP form.
         default_domain: Default per-coordinate box ``(lo, hi)``.
+        grad_finite_lo: Lower end of the open interval on which ``h'`` is finite.
+            A *finite* value marks an endpoint where the kernel is essentially
+            smooth (Legendre type): ``h'(xi) -> -inf`` as ``xi`` approaches it
+            from above (e.g. Shannon entropy at ``0``).  Defaults to ``-inf``
+            (gradient finite everywhere below ``grad_finite_hi``).
+        grad_finite_hi: Upper end of that interval; a finite value marks
+            ``h'(xi) -> +inf`` as ``xi`` approaches it from below (e.g. logit
+            entropy at ``1``).  Defaults to ``+inf``.
 
     """
 
     has_closed_form_recovery: bool = False
     cvxpy_expressible: bool = False
     default_domain: Tuple[float, float] = (0.0, 1.0)
+    grad_finite_lo: float = -math.inf
+    grad_finite_hi: float = math.inf
+
+    def admits_primal_interior(self, lo: ArrayLike, hi: ArrayLike) -> bool:
+        r"""
+        Whether a primal interior-point/log-barrier method is well posed on the box.
+
+        This is a *provable precondition*, not a heuristic: a primal barrier
+        augments stationarity with ``-mu/(x-lo) + mu/(hi-x)`` and steps ``x`` in
+        the primal, so it requires ``h'`` to be **finite on the closed box**
+        ``[lo, hi]``.  That holds iff the box lies strictly inside the
+        finite-gradient interval ``(grad_finite_lo, grad_finite_hi)``.
+
+        It is **false** for Legendre-type kernels whose gradient diverges at a
+        box face -- Shannon entropy (``h'(0+) = -inf``) and logit entropy
+        (``h'(0+) = -inf``, ``h'(1-) = +inf``).  For those the box face is
+        provably never active *and* a primal barrier there is ill posed, so the
+        problem must be solved in the **dual**, where the conjugate ``h*`` is
+        globally smooth and the recovery ``x = h'^{-1}(eta)`` stays bounded.
+
+        Args:
+            lo: Lower box bounds (any broadcastable shape).
+            hi: Upper box bounds (any broadcastable shape).
+
+        Returns:
+            ``True`` iff ``grad_finite_lo < min(lo)`` and ``max(hi) < grad_finite_hi``.
+
+        """
+        lo_min = float(as_tensor(lo).min())
+        hi_max = float(as_tensor(hi).max())
+        return self.grad_finite_lo < lo_min and hi_max < self.grad_finite_hi
 
     @abstractmethod
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
