@@ -71,32 +71,49 @@ class PolynomialSievePerturbation(SeparablePerturbation):
         arr = as_tensor(params).reshape(-1)
         return self.gamma if arr.numel() == 0 else arr
 
-    # -- kernel and derivatives ---------------------------------------------
+    # -- kernel and derivatives (Horner) ------------------------------------
+
+    @staticmethod
+    def _horner(xi: torch.Tensor, coeffs_low_to_high: list) -> torch.Tensor:
+        """
+        Evaluate ``sum_k c_k xi^k`` by Horner's method (one pass).
+
+        Args:
+            xi: Evaluation points.
+            coeffs_low_to_high: Coefficients ``[c_0, c_1, ..., c_d]``.
+
+        Returns:
+            The polynomial value at ``xi``.
+
+        """
+        out = torch.full_like(xi, float(coeffs_low_to_high[-1]))
+        for c in reversed(coeffs_low_to_high[:-1]):
+            out = out * xi + c
+        return out
 
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``1/2 xi^2 + sum_l gamma_l xi^l / l``."""
         xi = as_tensor(xi)
-        out = 0.5 * xi**2
-        for m, g in enumerate(self._coeffs(params)):
-            ll = m + 3
-            out = out + g * xi**ll / ll
-        return out
+        g = self._coeffs(params)
+        # c_2 = 1/2, c_l = gamma_l / l for l = 3..L.
+        coeffs = [0.0, 0.0, 0.5] + [g[m] / (m + 3) for m in range(g.numel())]
+        return self._horner(xi, coeffs)
 
     def hprime(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``xi + sum_l gamma_l xi^{l-1}``."""
         xi = as_tensor(xi)
-        out = xi.clone()
-        for m, g in enumerate(self._coeffs(params)):
-            out = out + g * xi ** (m + 2)
-        return out
+        g = self._coeffs(params)
+        # c_1 = 1, c_{l-1} = gamma_l for l = 3..L.
+        coeffs = [0.0, 1.0] + [g[m] for m in range(g.numel())]
+        return self._horner(xi, coeffs)
 
     def hsecond(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``1 + sum_l gamma_l (l-1) xi^{l-2}``."""
         xi = as_tensor(xi)
-        out = torch.ones_like(xi)
-        for m, g in enumerate(self._coeffs(params)):
-            out = out + g * (m + 2) * xi ** (m + 1)
-        return out
+        g = self._coeffs(params)
+        # c_0 = 1, c_{l-2} = gamma_l (l-1) for l = 3..L.
+        coeffs = [1.0] + [g[m] * (m + 2) for m in range(g.numel())]
+        return self._horner(xi, coeffs)
 
     # -- recovery / feasibility --------------------------------------------
 

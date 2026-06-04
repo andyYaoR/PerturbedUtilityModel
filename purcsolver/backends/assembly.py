@@ -96,8 +96,9 @@ class CSCAssembler:
 
         """
         w = np.asarray(w, dtype=float)
-        data = np.zeros(self.nnz, dtype=float)
-        np.add.at(data, self._slot, self._coeff * w[self._srci])
+        # bincount is the fast scatter-add (np.add.at is markedly slower); slots
+        # are precomputed in [0, nnz), so minlength pins the output length.
+        data = np.bincount(self._slot, weights=self._coeff * w[self._srci], minlength=self.nnz)
         data[self._diag_slot] += eps
         return data
 
