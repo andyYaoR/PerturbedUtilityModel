@@ -104,6 +104,39 @@ initialization/continuation phase.
 5. Performance claims must separate iteration count, linear-solve backend, and
    recovery/assembly costs.
 
+## Literature Anchors
+
+The algorithmic direction below is grounded in the following primary references.
+
+- Qi and Sun, ["A nonsmooth version of Newton's method"](https://doi.org/10.1007/BF01581275),
+  Mathematical Programming, 1993. This is the local semismooth-Newton foundation:
+  generalized Jacobians replace classical derivatives, and semismoothness gives
+  the fast local convergence theory.
+- Qi, ["Convergence Analysis of Some Algorithms for Solving Nonsmooth
+  Equations"](https://doi.org/10.1287/moor.18.1.227), Mathematics of Operations
+  Research, 1993. This is a useful warning for our current LM baseline: global
+  damping alone is not the same as a complete global convergence proof to a zero
+  of the nonsmooth system; hybrid/globalized merit constructions matter.
+- Hintermuller, Ito, and Kunisch, ["The Primal-Dual Active Set Strategy as a
+  Semismooth Newton Method"](https://doi.org/10.1137/S1052623401383558), SIAM
+  Journal on Optimization, 2002. This supports the active-set interpretation of
+  the exact PURC SSN step and emphasizes merit functions for global convergence.
+- Nesterov and Nemirovskii, ["Interior-Point Polynomial Algorithms in Convex
+  Programming"](https://doi.org/10.1137/1.9781611970791), SIAM, 1994/2012. This
+  is the central-path/self-concordant barrier reference for convex programming.
+- Wright, ["Primal-Dual Interior-Point Methods"](https://books.google.com/books?id=oQdBzXhZeUkC),
+  SIAM, 1997. This is the practical primal-dual path-following reference,
+  including predictor-corrector ideas and sparse linear algebra.
+- Boyd and Vandenberghe, ["Convex Optimization"](https://www.seas.ucla.edu/~vandenbe/cvxbook.html),
+  Cambridge University Press, 2004. This gives the standard barrier-method and
+  central-path treatment for convex equality-constrained problems.
+- Wachter and Biegler, ["On the Implementation of an Interior-Point Filter
+  Line-Search Algorithm for Large-Scale Nonlinear
+  Programming"](https://doi.org/10.1007/s10107-004-0559-y), Mathematical
+  Programming, 2006. This is not the proof template for our convex problem, but
+  it is a relevant implementation reference for large-scale primal-dual
+  interior-point globalization and restoration logic.
+
 ## Staged Plan
 
 ### Stage 0: Instrumentation and Honest Baselines
@@ -149,6 +182,47 @@ then decrease `mu` by a duality-gap rule and finish with exact active-set SSN at
 `A diag(1 / (ell_i h''(x_i) + barrier_hess_i)) A^T`, so it reuses the same
 Laplacian backend. This is the closest specialized analogue of CVXPY's robust
 interior-point behavior, but without generic modeling overhead.
+
+For a fixed `mu > 0`, the per-coordinate recovery for a multiplier `lambda`
+becomes a strictly monotone scalar equation on `(lo_i, hi_i)`:
+
+```text
+ell_i h'(x_i; gamma) - v_i - (A^T lambda)_i
+    - mu / (x_i - lo_i) + mu / (hi_i - x_i) = 0.
+```
+
+The derivative is
+
+```text
+ell_i h''(x_i; gamma)
+    + mu / (x_i - lo_i)^2 + mu / (hi_i - x_i)^2 > 0,
+```
+
+so the dual residual is smooth for fixed `mu`, every coordinate has positive
+curvature, and the Newton matrix keeps the same `A diag(w) A^T` form with
+
+```text
+w_i(mu) = 1 /
+  [ell_i h''(x_i; gamma)
+   + mu/(x_i-lo_i)^2
+   + mu/(hi_i-x_i)^2].
+```
+
+This directly addresses the empty-active-set cold start for quadratic and sieve
+kernels: with `mu > 0`, there is no zero-curvature active-set selection at the
+start. The proof obligation is also cleaner than the current LM baseline:
+fixed-`mu` subproblems are smooth, strictly convex barrier subproblems; the
+central-path theory controls `mu -> 0`; exact SSN at `mu=0` is only used after
+the barrier path has produced a high-quality warm start.
+
+Important feasibility caveat: a log barrier requires a strictly feasible point
+with `lo < x < hi` and `Ax = b` on the coordinates being barriered. For strongly
+connected PURC networks this is plausible because circulations can make all arcs
+interior before the negative-utility optimum removes cycles, but it is not a
+free assumption for arbitrary general polytopes. The production algorithm needs
+either a Phase-I strict-feasibility routine, a reduced-coordinate barrier over
+coordinates that admit interior movement, or a documented fallback when Slater
+fails.
 
 Candidate B: proximal dual continuation.
 
