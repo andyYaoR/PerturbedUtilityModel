@@ -46,7 +46,7 @@ from ..utils.logging import get_logger
 from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor
 from ..utils.typing import ArrayLike
 from . import SOLVERS
-from ._linesearch import armijo_backtracking
+from ._linesearch import armijo_backtracking_t
 from .base import ForwardSolver
 
 _logger = get_logger(__name__)
@@ -99,26 +99,6 @@ class RegularizedSSNSolver(ForwardSolver):
         eta = (v + c.rmatvec(lam)) / c.ell
         x_hat, interior = pert.primal_recovery(eta, c.lo, c.hi, gamma)
         return eta, x_hat, interior
-
-    def _phi(self, v: torch.Tensor, lam: torch.Tensor, b: torch.Tensor, gamma: ArrayLike) -> float:
-        """
-        Evaluate the dual objective ``phi(lambda)``.
-
-        Args:
-            v: Link utilities.
-            lam: Multipliers.
-            b: Equality right-hand side.
-            gamma: Perturbation parameters.
-
-        Returns:
-            The scalar ``phi(lambda)``.
-
-        """
-        c = self._problem.constraint
-        pert = self._problem.perturbation
-        eta = (v + c.rmatvec(lam)) / c.ell
-        conj = pert.conj_box(eta, c.lo, c.hi, gamma)
-        return float(-(b @ lam) + (c.ell @ conj))
 
     def solve(
         self,
@@ -174,7 +154,7 @@ class RegularizedSSNSolver(ForwardSolver):
         with torch.no_grad():
             for it in range(cfg.max_iter):
                 nit = it + 1
-                _, x_hat, interior = self._recover(v, lam, gamma)
+                eta, x_hat, interior = self._recover(v, lam, gamma)
                 r = c.matvec(x_hat) - b_use
                 r_inf = float(r.abs().max()) if r.numel() else 0.0
                 history.append(r_inf)
@@ -206,17 +186,29 @@ class RegularizedSSNSolver(ForwardSolver):
                 direction = self._backend.solve(weight, eps_k, -r)
                 dderiv = float(r @ direction)  # grad phi . d  (should be < 0)
 
-                phi0 = self._phi(v, lam, b_use, gamma)
-                lam, t, _phi_new, ok = armijo_backtracking(
-                    lambda lp: self._phi(v, lp, b_use, gamma),
+                # Line search on phi as a function of step length t.  eta(t) =
+                # eta + t * (A^T d / ell), so A^T d is computed once (not per
+                # backtracking step), and phi(0) reuses the iterate's x_hat
+                # (eta * x_hat - h) instead of recomputing the recovery.
+                atd_over_ell = c.rmatvec(direction) / c.ell
+                b_dot_d = float(b_use @ direction)
+                phi_lin0 = float(-(b_use @ lam))
+                conj0 = eta * x_hat - pert.h(x_hat, gamma)
+                phi0 = phi_lin0 + float(c.ell @ conj0)
+
+                def phi_of_t(t, _eta=eta, _atde=atd_over_ell, _lin=phi_lin0, _bd=b_dot_d):
+                    conj = pert.conj_box(_eta + t * _atde, c.lo, c.hi, gamma)
+                    return _lin - t * _bd + float(c.ell @ conj)
+
+                t, _phi_new, ok = armijo_backtracking_t(
+                    phi_of_t,
                     phi0,
-                    lam,
-                    direction,
                     dderiv,
                     c1=cfg.armijo_c1,
                     beta=cfg.armijo_beta,
                     max_steps=cfg.max_linesearch,
                 )
+                lam = lam + t * direction
                 ls_steps.append(t)
                 if not ok:
                     status = STATUS_LINESEARCH_FAILED

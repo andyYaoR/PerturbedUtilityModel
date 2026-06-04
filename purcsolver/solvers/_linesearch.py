@@ -8,56 +8,52 @@ decrease condition
 
     phi(lambda + t d) <= phi(lambda) + c1 * t * (r . d)
 
-holds globalizes the (only locally convergent) Newton iteration.  Because ``phi``
-is ``C^1`` and convex even where the active set changes, a sufficiently small
-step always succeeds, so a failure signals numerical trouble rather than a
-non-descent direction.
+holds globalizes the (only locally convergent) Newton iteration.
+
+The objective is evaluated as a function of the step length ``t`` so the caller
+can supply a closure that updates ``eta`` incrementally -- ``eta(t) = eta0 + t *
+(A^T d / ell)`` -- avoiding a fresh ``A^T`` matvec on every backtracking step.
+Because ``phi`` is ``C^1`` and convex even where the active set changes, a
+sufficiently small step always succeeds, so a failure signals numerical trouble
+rather than a non-descent direction.
 """
 
 from __future__ import annotations
 
 from typing import Callable, Tuple
 
-import torch
 
-
-def armijo_backtracking(
-    phi: Callable[[torch.Tensor], float],
+def armijo_backtracking_t(
+    phi_of_t: Callable[[float], float],
     phi0: float,
-    lam: torch.Tensor,
-    direction: torch.Tensor,
     directional_derivative: float,
     *,
     c1: float,
     beta: float,
     max_steps: int,
-) -> Tuple[torch.Tensor, float, float, bool]:
+) -> Tuple[float, float, bool]:
     """
-    Backtrack along ``direction`` until Armijo sufficient decrease holds.
+    Backtrack on the step length ``t`` until Armijo sufficient decrease holds.
 
     Args:
-        phi: The objective ``phi(lambda)`` to minimize.
-        phi0: Cached value ``phi(lam)`` at the current iterate.
-        lam: Current iterate ``lambda`` (torch tensor).
-        direction: Search direction ``d`` (a descent direction).
+        phi_of_t: The objective as a function of step length, ``t -> phi(lambda +
+            t d)`` (``phi_of_t(0) == phi0``).
+        phi0: Cached value ``phi(lambda)`` at the current iterate.
         directional_derivative: ``grad phi . d`` (must be ``< 0``).
         c1: Armijo parameter in ``(0, 1/2)``.
         beta: Backtracking shrink factor in ``(0, 1)``.
         max_steps: Maximum number of halvings.
 
     Returns:
-        ``(lam_new, t, phi_new, success)``: the accepted iterate, step size,
-        new objective value, and whether sufficient decrease was achieved.
+        ``(t, phi_new, success)``: the accepted step length, the new objective
+        value, and whether sufficient decrease was achieved.
 
     """
     t = 1.0
-    lam_trial = lam
     phi_trial = phi0
     for _ in range(max_steps):
-        lam_trial = lam + t * direction
-        phi_trial = phi(lam_trial)
+        phi_trial = phi_of_t(t)
         if phi_trial <= phi0 + c1 * t * directional_derivative:
-            return lam_trial, t, phi_trial, True
+            return t, phi_trial, True
         t *= beta
-    # Return the last (smallest-step) trial; caller decides how to handle failure.
-    return lam_trial, t, phi_trial, False
+    return t, phi_trial, False
