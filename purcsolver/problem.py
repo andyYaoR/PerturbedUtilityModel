@@ -13,8 +13,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
-import numpy as np
+import torch
 
+from .utils.torch_compat import as_tensor, to_numpy
 from .utils.typing import ArrayLike, SparseMatrix
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -76,13 +77,13 @@ class PUMProblem:
             beta: Utility coefficients, shape ``(K,)``.
 
         Returns:
-            Link utilities ``v``, shape ``(N,)``.
+            Link utilities ``v`` as a torch tensor, shape ``(N,)``.
 
         Raises:
             ValueError: If ``beta`` has the wrong length.
 
         """
-        beta = np.asarray(beta, dtype=float)
+        beta = as_tensor(beta).reshape(-1)
         if self.Z is None:
             if beta.shape[0] != self.num_coords:
                 raise ValueError(
@@ -92,4 +93,7 @@ class PUMProblem:
             return beta
         if beta.shape[0] != self.num_params:
             raise ValueError(f"beta has length {beta.shape[0]} but Z expects {self.num_params}.")
-        return np.asarray(self.Z @ beta, dtype=float).ravel()
+        if isinstance(self.Z, torch.Tensor):
+            return (self.Z @ beta).reshape(-1)
+        # SciPy / numpy Z: bridge through numpy zero-copy on CPU.
+        return as_tensor(self.Z @ to_numpy(beta)).reshape(-1)

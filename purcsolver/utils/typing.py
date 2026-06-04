@@ -1,10 +1,10 @@
 """
 Shared type aliases for PURCSolver.
 
-The package convention is numpy/scipy arrays on CPU (no autograd is required; the
-linear solve is delegated to LaplacianSolve which consumes numpy/scipy).  These
-aliases keep signatures readable and leave room for a torch path later without an
-API change.
+The package is torch-native: tensors are the primary data type on the public API
+and throughout the solver (CPU ``float64`` by default, written
+device-agnostically).  NumPy/SciPy appear only behind zero-copy bridges (see
+:mod:`purcsolver.utils.torch_compat`) for the few dependencies that require them.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Tuple, Union
 
 import numpy as np
+import torch
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import scipy.sparse as sp
@@ -20,13 +21,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 else:
     SparseMatrix = object
 
-# A dense real array (function values, multipliers, weights, ...).
-ArrayLike = np.ndarray
+# A real tensor (function values, multipliers, weights, ...).  Torch is primary;
+# numpy arrays are accepted at the boundary and coerced zero-copy.
+ArrayLike = Union[torch.Tensor, np.ndarray]
 
 # Model parameters theta = (beta, gamma): beta are the K utility coefficients,
-# gamma are the shape parameters of the perturbation (e.g. the polynomial-sieve
-# coefficients gamma_3..gamma_L).  Either may be empty for a fixed sub-model.
+# gamma are the perturbation shape parameters.  Either may be empty.
 Theta = Tuple[ArrayLike, ArrayLike]
-
-# Anything we accept where a real vector is expected.
-RealVector = Union[ArrayLike, "list[float]", Tuple[float, ...]]

@@ -28,7 +28,9 @@ from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 import sympy as sp
+import torch
 
+from ..utils.torch_compat import as_tensor, to_numpy
 from ..utils.typing import ArrayLike
 from ._bernstein import is_convex
 from ._rootfind import solve_monotone
@@ -256,20 +258,23 @@ class SymbolicPerturbation(SeparablePerturbation):
         self.has_closed_form_recovery = self.kernel.has_closed_form and method != "rootfind"
 
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
-        """Return the compiled kernel value at ``xi``."""
+        """Return the compiled kernel value at ``xi`` (torch, via the numpy kernel)."""
         del params
-        return np.asarray(self.kernel.h(np.asarray(xi, dtype=float)), dtype=float)
+        xi_t = as_tensor(xi)
+        return as_tensor(self.kernel.h(to_numpy(xi_t))).reshape(xi_t.shape)
 
     def hprime(self, xi: ArrayLike, params: Any) -> ArrayLike:
-        """Return ``h'(xi)``."""
+        """Return ``h'(xi)`` (torch, via the numpy kernel)."""
         del params
-        return np.asarray(self.kernel.hp(np.asarray(xi, dtype=float)), dtype=float)
+        xi_t = as_tensor(xi)
+        return as_tensor(self.kernel.hp(to_numpy(xi_t))).reshape(xi_t.shape)
 
     def hsecond(self, xi: ArrayLike, params: Any) -> ArrayLike:
-        """Return ``h''(xi)``."""
+        """Return ``h''(xi)`` (torch, via the numpy kernel)."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        return np.asarray(self.kernel.hpp(xi), dtype=float) * np.ones_like(xi)
+        xi_t = as_tensor(xi)
+        val = as_tensor(self.kernel.hpp(to_numpy(xi_t)))
+        return val * torch.ones_like(xi_t)
 
     def primal_recovery(
         self,
@@ -282,7 +287,10 @@ class SymbolicPerturbation(SeparablePerturbation):
         del params
         use_closed = self.kernel.has_closed_form and self.method != "rootfind"
         if use_closed:
-            return self.kernel.inverse(eta, lo, hi)
+            xi_np, interior_np = self.kernel.inverse(
+                to_numpy(as_tensor(eta)), to_numpy(as_tensor(lo)), to_numpy(as_tensor(hi))
+            )
+            return as_tensor(xi_np), as_tensor(interior_np, dtype=torch.bool)
         return solve_monotone(
             lambda z: self.hprime(z, None), lambda z: self.hsecond(z, None), eta, lo, hi
         )

@@ -20,11 +20,13 @@ from .utils.typing import ArrayLike
 STATUS_CONVERGED = 0
 STATUS_MAX_ITER = 1
 STATUS_LINESEARCH_FAILED = 2
+STATUS_STALLED = 3
 
 _STATUS_MESSAGES = {
     STATUS_CONVERGED: "Converged: residual below tolerance.",
     STATUS_MAX_ITER: "Maximum number of Newton iterations reached.",
     STATUS_LINESEARCH_FAILED: "Line search failed to find a sufficient-decrease step.",
+    STATUS_STALLED: "Residual stalled (likely at the numerical floor) before reaching tol.",
 }
 
 

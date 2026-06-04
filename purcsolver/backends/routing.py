@@ -22,10 +22,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-import numpy as np
+import torch
 
 from ..constraints.base import Polytope
 from ..utils.logging import get_logger
+from ..utils.torch_compat import as_tensor, to_numpy
 from .assembly import CSCAssembler
 
 _logger = get_logger(__name__)
@@ -80,9 +81,13 @@ class LaplacianBackend:
                 opts["method"] = "auto"
         return opts
 
-    def solve(self, w: np.ndarray, eps: float, rhs: np.ndarray) -> np.ndarray:
+    def solve(self, w: torch.Tensor, eps: float, rhs: torch.Tensor) -> torch.Tensor:
         """
         Solve ``(A diag(w) A^T + eps I) d = rhs`` for one right-hand side.
+
+        Weights and RHS are torch tensors; they bridge to NumPy zero-copy on CPU
+        for the SciPy assembly and the LaplacianSolve call, and the solution is
+        returned as a torch tensor matching the solver's dtype.
 
         Args:
             w: Per-coordinate weights ``D * active_mask``, shape ``(N,)``.
@@ -90,15 +95,16 @@ class LaplacianBackend:
             rhs: Right-hand side, shape ``(k,)``.
 
         Returns:
-            The Newton step ``d``, shape ``(k,)``.
+            The Newton step ``d`` as a torch tensor, shape ``(k,)``.
 
         """
         from laplaciansolve import SDDMSolver, SolverConfig
 
-        M = self.assembler.assemble(w, eps)
+        M = self.assembler.assemble(to_numpy(w), float(eps))
         if self._solver is None:
             self._solver = SDDMSolver(M, config=SolverConfig(**self._options))
         else:
             # Same pattern across iterations -> reuse the symbolic factorization.
             self._solver.update(M)
-        return np.asarray(self._solver.solve(np.asarray(rhs, dtype=float)), dtype=float)
+        sol = self._solver.solve(to_numpy(rhs))
+        return as_tensor(sol)

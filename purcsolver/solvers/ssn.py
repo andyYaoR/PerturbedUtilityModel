@@ -20,13 +20,17 @@ linear solve is delegated to LaplacianSolve via :class:`LaplacianBackend`) with
 system SPD and bounds the step along ``H``'s nullspace, so no separate multiplier
 gauge-fixing is needed -- followed by an Armijo line search on ``phi``.  Strong
 semismoothness gives local Q-quadratic convergence; the line search globalizes.
+
+All solver math runs on torch tensors (CPU ``float64`` by default) under
+``torch.no_grad`` -- torch is the data container, not an autograd graph (the
+Fenchel-Young estimation gradient needs only ``x*`` and ``F*``, no ``dx*/dtheta``).
 """
 
 from __future__ import annotations
 
 from typing import Optional, Tuple
 
-import numpy as np
+import torch
 
 from ..backends.routing import LaplacianBackend
 from ..config import SSNConfig
@@ -35,9 +39,11 @@ from ..result import (
     STATUS_CONVERGED,
     STATUS_LINESEARCH_FAILED,
     STATUS_MAX_ITER,
+    STATUS_STALLED,
     PURCResult,
 )
 from ..utils.logging import get_logger
+from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor
 from ..utils.typing import ArrayLike
 from . import SOLVERS
 from ._linesearch import armijo_backtracking
@@ -57,7 +63,7 @@ class RegularizedSSNSolver(ForwardSolver):
     def __init__(self, config: Optional[SSNConfig] = None) -> None:
         super().__init__(config)
         self._backend: Optional[LaplacianBackend] = None
-        self._lam: Optional[np.ndarray] = None
+        self._lam: Optional[torch.Tensor] = None
 
     def preprocess(self, problem: PUMProblem) -> None:
         """
@@ -69,13 +75,13 @@ class RegularizedSSNSolver(ForwardSolver):
         """
         self._problem = problem
         self._backend = LaplacianBackend(problem.constraint, self.config.laplacian)
-        self._lam = np.zeros(problem.constraint.num_constraints, dtype=float)
+        self._lam = torch.zeros(problem.constraint.num_constraints, dtype=DEFAULT_DTYPE)
 
     # -- internals ----------------------------------------------------------
 
     def _recover(
-        self, v: ArrayLike, lam: ArrayLike, gamma: ArrayLike
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        self, v: torch.Tensor, lam: torch.Tensor, gamma: ArrayLike
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Map multipliers to ``(eta, x_hat, interior_mask)``.
 
@@ -94,7 +100,7 @@ class RegularizedSSNSolver(ForwardSolver):
         x_hat, interior = pert.primal_recovery(eta, c.lo, c.hi, gamma)
         return eta, x_hat, interior
 
-    def _phi(self, v: ArrayLike, lam: ArrayLike, b: ArrayLike, gamma: ArrayLike) -> float:
+    def _phi(self, v: torch.Tensor, lam: torch.Tensor, b: torch.Tensor, gamma: ArrayLike) -> float:
         """
         Evaluate the dual objective ``phi(lambda)``.
 
@@ -112,7 +118,7 @@ class RegularizedSSNSolver(ForwardSolver):
         pert = self._problem.perturbation
         eta = (v + c.rmatvec(lam)) / c.ell
         conj = pert.conj_box(eta, c.lo, c.hi, gamma)
-        return float(-b @ lam + c.ell @ conj)
+        return float(-(b @ lam) + (c.ell @ conj))
 
     def solve(
         self,
@@ -147,68 +153,87 @@ class RegularizedSSNSolver(ForwardSolver):
         pert = self._problem.perturbation
         beta, gamma = theta
         v = self._problem.utility(beta)
-        b_use = c.b if b is None else np.asarray(b, dtype=float).ravel()
+        b_use = c.b if b is None else as_tensor(b).reshape(-1)
 
         if lam0 is not None:
-            lam = np.asarray(lam0, dtype=float).copy()
+            lam = as_tensor(lam0).reshape(-1).clone()
         elif cfg.warm_start and self._lam is not None:
-            lam = self._lam.copy()
+            lam = self._lam.clone()
         else:
-            lam = np.zeros(c.num_constraints, dtype=float)
+            lam = torch.zeros(c.num_constraints, dtype=DEFAULT_DTYPE)
 
         history: list[float] = []
         status = STATUS_MAX_ITER
         nit = 0
-        x_hat = np.zeros(c.num_coords)
+        x_hat = torch.zeros(c.num_coords, dtype=DEFAULT_DTYPE)
+        interior = torch.zeros(c.num_coords, dtype=torch.bool)
         ls_steps: list[float] = []
+        best_r = float("inf")
+        stalled = 0
 
-        for it in range(cfg.max_iter):
-            nit = it + 1
+        with torch.no_grad():
+            for it in range(cfg.max_iter):
+                nit = it + 1
+                _, x_hat, interior = self._recover(v, lam, gamma)
+                r = c.matvec(x_hat) - b_use
+                r_inf = float(r.abs().max()) if r.numel() else 0.0
+                history.append(r_inf)
+                if r_inf < cfg.tol:
+                    status = STATUS_CONVERGED
+                    nit = it
+                    break
+
+                # Stagnation: residual no longer improving (hit the numerical
+                # floor below the requested tol).  Stop instead of spinning.
+                if r_inf < best_r * (1.0 - 1e-3):
+                    best_r = r_inf
+                    stalled = 0
+                else:
+                    stalled += 1
+                    if stalled >= cfg.stall_patience:
+                        status = STATUS_STALLED
+                        break
+
+                # Newton weights: D_i / ell on the active set, 0 at saturated coords.
+                weight = torch.where(
+                    interior,
+                    pert.inv_hess_weight(x_hat, gamma) / c.ell,
+                    torch.zeros_like(x_hat),
+                )
+                eps_k = min(cfg.eps0, float(r.norm()))
+                eps_k = max(eps_k, cfg.eps_floor)
+
+                direction = self._backend.solve(weight, eps_k, -r)
+                dderiv = float(r @ direction)  # grad phi . d  (should be < 0)
+
+                phi0 = self._phi(v, lam, b_use, gamma)
+                lam, t, _phi_new, ok = armijo_backtracking(
+                    lambda lp: self._phi(v, lp, b_use, gamma),
+                    phi0,
+                    lam,
+                    direction,
+                    dderiv,
+                    c1=cfg.armijo_c1,
+                    beta=cfg.armijo_beta,
+                    max_steps=cfg.max_linesearch,
+                )
+                ls_steps.append(t)
+                if not ok:
+                    status = STATUS_LINESEARCH_FAILED
+                    break
+
+            # Final recovery at the accepted multipliers.
             _, x_hat, interior = self._recover(v, lam, gamma)
             r = c.matvec(x_hat) - b_use
-            r_inf = float(np.max(np.abs(r))) if r.size else 0.0
-            history.append(r_inf)
-            if r_inf < cfg.tol:
+            r_inf = float(r.abs().max()) if r.numel() else 0.0
+            if status == STATUS_CONVERGED or r_inf < cfg.tol:
                 status = STATUS_CONVERGED
-                nit = it
-                break
 
-            # Newton weights: D_i / ell on the active set, 0 at saturated coords.
-            weight = np.where(interior, pert.inv_hess_weight(x_hat, gamma) / c.ell, 0.0)
-            r_two = float(np.linalg.norm(r))
-            eps_k = min(cfg.eps0, r_two)
-            eps_k = max(eps_k, cfg.eps_floor)
-
-            direction = self._backend.solve(weight, eps_k, -r)
-            dderiv = float(r @ direction)  # grad phi . d  (should be < 0)
-
-            phi0 = self._phi(v, lam, b_use, gamma)
-            lam, t, _phi_new, ok = armijo_backtracking(
-                lambda lp: self._phi(v, lp, b_use, gamma),
-                phi0,
-                lam,
-                direction,
-                dderiv,
-                c1=cfg.armijo_c1,
-                beta=cfg.armijo_beta,
-                max_steps=cfg.max_linesearch,
-            )
-            ls_steps.append(t)
-            if not ok:
-                status = STATUS_LINESEARCH_FAILED
-                break
-
-        # Final recovery at the accepted multipliers.
-        _, x_hat, interior = self._recover(v, lam, gamma)
-        r = c.matvec(x_hat) - b_use
-        r_inf = float(np.max(np.abs(r))) if r.size else 0.0
-        if status == STATUS_CONVERGED or r_inf < cfg.tol:
-            status = STATUS_CONVERGED
+            f_conj = float((v @ x_hat) - (c.ell @ pert.h(x_hat, gamma)))
 
         if cfg.warm_start:
-            self._lam = lam.copy()
+            self._lam = lam.clone()
 
-        f_conj = float(v @ x_hat - c.ell @ pert.h(x_hat, gamma))
         return PURCResult(
             x=x_hat,
             lam=lam,
@@ -219,7 +244,7 @@ class RegularizedSSNSolver(ForwardSolver):
             conjugate=f_conj,
             residual_history=history,
             extras={
-                "active_set_size": int(np.count_nonzero(interior)),
+                "active_set_size": int(interior.sum()),
                 "linesearch_steps": ls_steps,
                 "backend_method": self._backend._options.get("method"),
             },

@@ -15,6 +15,7 @@ from typing import Any, Optional, Tuple
 import numpy as np
 
 from ..problem import PUMProblem
+from ..utils.torch_compat import to_numpy
 from ..utils.typing import ArrayLike
 
 
@@ -46,12 +47,17 @@ def solve_cvxpy(
     c = problem.constraint
     pert = problem.perturbation
     beta, gamma = theta
-    v = problem.utility(beta)
+    # Bridge all torch data to numpy for the (numpy-based) cvxpy model.
+    v = to_numpy(problem.utility(beta))
+    ell = to_numpy(c.ell)
+    b_np = to_numpy(c.b)
+    lo_np = to_numpy(c.lo)
+    hi_np = to_numpy(c.hi)
 
     x = cp.Variable(c.num_coords)
     h_expr = pert.cvxpy_h(x, gamma)
-    objective = cp.Minimize(cp.sum(cp.multiply(c.ell, h_expr)) - v @ x)
-    constraints = [c.A @ x == c.b, x >= c.lo, x <= c.hi]
+    objective = cp.Minimize(cp.sum(cp.multiply(ell, h_expr)) - v @ x)
+    constraints = [c.A @ x == b_np, x >= lo_np, x <= hi_np]
     prob = cp.Problem(objective, constraints)
 
     if solver is None:

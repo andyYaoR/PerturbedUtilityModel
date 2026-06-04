@@ -16,6 +16,9 @@ authors = [{ name = "Rui Yao", email = "rui.yao@technion.ac.il" }]
 dependencies = [
     "numpy>=1.21.0",
     "scipy>=1.7.0",
+    # torch is the primary data type for the public API and all solver math
+    # (CPU float64 by default); numpy/scipy are bridged zero-copy on CPU.
+    "torch>=2.0.0",
     # sympy powers the symbolic perturbation compiler (auto-derive h', h'' and a
     # closed-form inverse of h'(xi)=eta when the gradient is strictly monotone).
     "sympy>=1.10",

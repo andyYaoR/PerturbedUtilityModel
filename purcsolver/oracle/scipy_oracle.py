@@ -20,6 +20,7 @@ from typing import Tuple
 import numpy as np
 
 from ..problem import PUMProblem
+from ..utils.torch_compat import to_numpy
 from ..utils.typing import ArrayLike
 
 
@@ -50,28 +51,32 @@ def solve_scipy(
     c = problem.constraint
     pert = problem.perturbation
     beta, gamma = theta
-    v = problem.utility(beta)
+    # Bridge all torch data to numpy: this oracle is a deliberately separate,
+    # dense numpy implementation (no torch ops, no LaplacianSolve).
+    v = to_numpy(problem.utility(beta))
     A = c.A.toarray()
-    b = np.asarray(c.b, dtype=float)
-    ell, lo, hi = c.ell, c.lo, c.hi
+    b = to_numpy(c.b)
+    ell, lo, hi = to_numpy(c.ell), to_numpy(c.lo), to_numpy(c.hi)
     k = A.shape[0]
     lam = np.zeros(k)
     eye = np.eye(k)
 
     def recover(lvec):
         eta = (v + A.T @ lvec) / ell
-        return pert.primal_recovery(eta, lo, hi, gamma)
+        x_hat, interior = pert.primal_recovery(eta, lo, hi, gamma)
+        return to_numpy(x_hat), to_numpy(interior)
 
     def phi(lvec):
         eta = (v + A.T @ lvec) / ell
-        return float(-b @ lvec + ell @ pert.conj_box(eta, lo, hi, gamma))
+        return float(-b @ lvec + ell @ to_numpy(pert.conj_box(eta, lo, hi, gamma)))
 
     for _ in range(max_iter):
         x_hat, interior = recover(lam)
         r = A @ x_hat - b
         if np.max(np.abs(r)) < tol:
             break
-        D = np.where(interior, pert.inv_hess_weight(x_hat, gamma) / ell, 0.0)
+        weight = to_numpy(pert.inv_hess_weight(x_hat, gamma)) / ell
+        D = np.where(interior, weight, 0.0)
         H = A @ (D[:, None] * A.T)
         eps = max(min(eps0, float(np.linalg.norm(r))), eps_floor)
         d = np.linalg.solve(H + eps * eye, -r)

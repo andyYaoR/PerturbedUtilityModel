@@ -12,6 +12,12 @@ model"*: independently swappable **perturbations**, **constraint geometries**, a
 **solvers**, with native C++ hot paths and comprehensive correctness/performance
 testing against CVXPY.
 
+The package is **torch-native**: tensors are the primary data type for the public
+API and all solver math (CPU `float64` by default, written device-agnostically).
+NumPy/SciPy inputs are accepted and bridged **zero-copy** on CPU
+(`torch.from_numpy` / `tensor.numpy()` share memory), and the few SciPy/CVXPY
+dependencies (CSC pattern build, oracle, feasibility) sit behind the same bridge.
+
 ## The problem
 
 For parameters `θ = (β, γ)`, solve the strictly-convex separable program
@@ -66,20 +72,21 @@ runtime-codegen path, cross-checked for performance (v0.3.0). See the staged pla
 ### Quick example
 
 ```python
-import numpy as np, scipy.sparse as sp
+import torch, numpy as np, scipy.sparse as sp
 from purcsolver import PUMProblem, SSNConfig
 from purcsolver.constraints import GeneralPolytope
 from purcsolver.perturbations import get_perturbation
 from purcsolver.solvers import RegularizedSSNSolver
 
 A = sp.csr_matrix(np.ones((1, 5)))          # sum(x) = 1
-poly = GeneralPolytope(A, b=np.array([1.0]), lo=0.0, hi=1.0)
+poly = GeneralPolytope(A, b=torch.tensor([1.0]), lo=0.0, hi=1.0)
 prob = PUMProblem(get_perturbation("entropy"), poly)
 
-solver = RegularizedSSNSolver(SSNConfig(tol=1e-11))
+solver = RegularizedSSNSolver(SSNConfig())
 solver.preprocess(prob)
-res = solver.solve((np.array([0.1, -0.4, 0.7, 0.2, -0.1]), np.array([])))
-print(res.x, res.success, res.nit)
+# theta = (beta, gamma); torch or numpy inputs both accepted (bridged zero-copy)
+res = solver.solve((torch.tensor([0.1, -0.4, 0.7, 0.2, -0.1]), torch.zeros(0)))
+print(res.x, res.success, res.nit)   # res.x is a torch.Tensor; res.x.numpy() is zero-copy
 ```
 
 ## Install (development)

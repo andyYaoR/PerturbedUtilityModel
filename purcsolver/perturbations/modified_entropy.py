@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from typing import Any, Tuple
 
-import numpy as np
+import torch
 
+from ..utils.torch_compat import as_tensor
 from ..utils.typing import ArrayLike
 from . import register_perturbation
 from .base import SeparablePerturbation
@@ -37,21 +38,21 @@ class ModifiedEntropyPerturbation(SeparablePerturbation):
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``(1+xi) log(1+xi) - xi``."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        one_plus = np.maximum(1.0 + xi, _EPS)
-        return one_plus * np.log(one_plus) - xi
+        xi = as_tensor(xi)
+        one_plus = (1.0 + xi).clamp_min(_EPS)
+        return one_plus * torch.log(one_plus) - xi
 
     def hprime(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``h'(xi) = log(1 + xi)``."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        return np.log(np.maximum(1.0 + xi, _EPS))
+        xi = as_tensor(xi)
+        return torch.log((1.0 + xi).clamp_min(_EPS))
 
     def hsecond(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``h''(xi) = 1 / (1 + xi)``."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        return 1.0 / np.maximum(1.0 + xi, _EPS)
+        xi = as_tensor(xi)
+        return 1.0 / (1.0 + xi).clamp_min(_EPS)
 
     def primal_recovery(
         self,
@@ -62,13 +63,13 @@ class ModifiedEntropyPerturbation(SeparablePerturbation):
     ) -> Tuple[ArrayLike, ArrayLike]:
         """Recover ``xi*(eta) = clip(exp(eta) - 1, lo, hi)``."""
         del params
-        eta = np.asarray(eta, dtype=float)
-        return self._clip_interior(np.exp(eta) - 1.0, lo, hi)
+        eta = as_tensor(eta)
+        return self._clip_interior(torch.exp(eta) - 1.0, lo, hi)
 
     def inv_hess_weight(self, xi_star: ArrayLike, params: Any) -> ArrayLike:
         """Return ``1 / h'' = 1 + xi*``."""
         del params
-        return 1.0 + np.asarray(xi_star, dtype=float)
+        return 1.0 + as_tensor(xi_star)
 
     def cvxpy_h(self, x: Any, params: Any) -> Any:
         """Return ``(1+xi) log(1+xi) - xi = -entr(1+xi) - xi``."""

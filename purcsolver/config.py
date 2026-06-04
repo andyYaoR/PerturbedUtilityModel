@@ -35,6 +35,9 @@ class SSNConfig:
         armijo_c1: Armijo sufficient-decrease parameter (``0 < c1 < 1/2``).
         armijo_beta: Armijo backtracking shrink factor in ``(0, 1)``.
         max_linesearch: Maximum backtracking steps per Newton iteration.
+        stall_patience: Stop early if the residual fails to improve by more than
+            a tiny relative amount for this many consecutive iterations (it has
+            hit the numerical floor); avoids spinning to ``max_iter``.
         warm_start: If ``True``, persist the solution multipliers between
             successive ``solve`` calls so a sweep over slightly varying ``theta``
             (the estimation outer loop) converges in few iterations.
@@ -52,6 +55,7 @@ class SSNConfig:
     armijo_c1: float = 1e-4
     armijo_beta: float = 0.5
     max_linesearch: int = 30
+    stall_patience: int = 8
     warm_start: bool = True
     laplacian: Dict[str, Any] = field(default_factory=dict)
     profile: bool = False
@@ -81,6 +85,8 @@ class SSNConfig:
             raise ValueError(f"armijo_beta must be in (0, 1), got {self.armijo_beta}")
         if self.max_linesearch < 1:
             raise ValueError(f"max_linesearch must be >= 1, got {self.max_linesearch}")
+        if self.stall_patience < 1:
+            raise ValueError(f"stall_patience must be >= 1, got {self.stall_patience}")
 
     def laplacian_config(self) -> Optional[Any]:
         """

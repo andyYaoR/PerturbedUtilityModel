@@ -19,8 +19,9 @@ from __future__ import annotations
 
 from typing import Any, Tuple
 
-import numpy as np
+import torch
 
+from ..utils.torch_compat import as_tensor, to_numpy
 from ..utils.typing import ArrayLike
 from . import register_perturbation
 from ._bernstein import is_convex
@@ -48,11 +49,13 @@ class PolynomialSievePerturbation(SeparablePerturbation):
     default_domain = (0.0, 1.0)
 
     def __init__(self, gamma: ArrayLike | None = None) -> None:
-        self.gamma = np.zeros(0) if gamma is None else np.asarray(gamma, dtype=float).ravel()
+        self.gamma = (
+            torch.zeros(0, dtype=torch.float64) if gamma is None else as_tensor(gamma).reshape(-1)
+        )
 
     # -- parameter handling -------------------------------------------------
 
-    def _coeffs(self, params: Any) -> np.ndarray:
+    def _coeffs(self, params: Any) -> torch.Tensor:
         """
         Resolve the shape parameters for a call (per-call overrides default).
 
@@ -60,19 +63,19 @@ class PolynomialSievePerturbation(SeparablePerturbation):
             params: Per-call ``gamma`` or ``None``/empty to use the stored default.
 
         Returns:
-            The shape-parameter array ``(gamma_3, ..., gamma_L)``.
+            The shape-parameter tensor ``(gamma_3, ..., gamma_L)``.
 
         """
         if params is None:
             return self.gamma
-        arr = np.asarray(params, dtype=float).ravel()
-        return self.gamma if arr.size == 0 else arr
+        arr = as_tensor(params).reshape(-1)
+        return self.gamma if arr.numel() == 0 else arr
 
-    # -- kernel and derivatives (Horner over the sieve powers) --------------
+    # -- kernel and derivatives ---------------------------------------------
 
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``1/2 xi^2 + sum_l gamma_l xi^l / l``."""
-        xi = np.asarray(xi, dtype=float)
+        xi = as_tensor(xi)
         out = 0.5 * xi**2
         for m, g in enumerate(self._coeffs(params)):
             ll = m + 3
@@ -81,16 +84,16 @@ class PolynomialSievePerturbation(SeparablePerturbation):
 
     def hprime(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``xi + sum_l gamma_l xi^{l-1}``."""
-        xi = np.asarray(xi, dtype=float)
-        out = np.array(xi, dtype=float)
+        xi = as_tensor(xi)
+        out = xi.clone()
         for m, g in enumerate(self._coeffs(params)):
             out = out + g * xi ** (m + 2)
         return out
 
     def hsecond(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``1 + sum_l gamma_l (l-1) xi^{l-2}``."""
-        xi = np.asarray(xi, dtype=float)
-        out = np.ones_like(xi)
+        xi = as_tensor(xi)
+        out = torch.ones_like(xi)
         for m, g in enumerate(self._coeffs(params)):
             out = out + g * (m + 2) * xi ** (m + 1)
         return out
@@ -116,4 +119,4 @@ class PolynomialSievePerturbation(SeparablePerturbation):
 
     def gamma_feasible(self, params: Any) -> bool:
         """Return whether ``params`` satisfies the Bernstein condition ``M gamma >= -1``."""
-        return is_convex(self._coeffs(params))
+        return is_convex(to_numpy(self._coeffs(params)))

@@ -28,8 +28,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Tuple
 
-import numpy as np
+import torch
 
+from ..utils.torch_compat import as_tensor
 from ..utils.typing import ArrayLike
 
 
@@ -89,6 +90,7 @@ class SeparablePerturbation(ABC):
             The box-restricted conjugate values, same shape as ``eta``.
 
         """
+        eta = as_tensor(eta)
         xi_star, _ = self.primal_recovery(eta, lo, hi, params)
         return eta * xi_star - self.h(xi_star, params)
 
@@ -185,6 +187,9 @@ class SeparablePerturbation(ABC):
             ``(clipped, interior_mask)``.
 
         """
-        clipped = np.clip(xi, lo, hi)
+        xi = as_tensor(xi)
+        lo = as_tensor(lo)
+        hi = as_tensor(hi)
+        clipped = torch.minimum(torch.maximum(xi, lo), hi)
         interior = (clipped > lo) & (clipped < hi)
         return clipped, interior

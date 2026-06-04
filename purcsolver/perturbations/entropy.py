@@ -4,26 +4,23 @@ Entropy perturbations (closed-form recovery).
 Two classic strictly-convex kernels whose inverse ``h'^{-1}`` is elementary:
 
 * **Shannon** ``h(xi) = xi log xi`` -- ``h'(xi) = 1 + log xi``,
-  ``h''(xi) = 1/xi``, so ``xi*(eta) = clip(exp(eta - 1), lo, hi)``.  This is the
-  kernel behind the recursive-logit / entropy-regularized choice.
+  ``h''(xi) = 1/xi``, so ``xi*(eta) = clip(exp(eta - 1), lo, hi)``.
 
 * **Binary / logit** ``h(xi) = xi log xi + (1-xi) log(1-xi)`` on ``[0, 1]`` --
   ``h'(xi) = log(xi / (1-xi))`` (the logit), ``h''(xi) = 1/(xi(1-xi))``, so
-  ``xi*(eta) = sigma(eta) = 1/(1+e^{-eta})``.  This is the canonical perturbed
-  utility -> logit map: the recovery lands strictly inside ``(0,1)`` on the unit
-  box, never saturating.
+  ``xi*(eta) = sigma(eta)``.  The canonical perturbed-utility -> logit map.
 
-``scipy.special.xlogy`` evaluates ``xi log xi`` with the correct ``0 log 0 = 0``
-limit, so the conjugate is well-defined at saturated corners.
+``torch.special.xlogy`` carries the ``0 log 0 = 0`` limit, so the conjugate is
+well-defined at saturated corners.
 """
 
 from __future__ import annotations
 
 from typing import Any, Tuple
 
-import numpy as np
-from scipy.special import expit, xlogy
+import torch
 
+from ..utils.torch_compat import as_tensor
 from ..utils.typing import ArrayLike
 from . import register_perturbation
 from .base import SeparablePerturbation
@@ -45,20 +42,20 @@ class EntropyPerturbation(SeparablePerturbation):
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``xi log xi`` (with the ``0 log 0 = 0`` limit)."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        return xlogy(xi, xi)
+        xi = as_tensor(xi)
+        return torch.special.xlogy(xi, xi)
 
     def hprime(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``h'(xi) = 1 + log xi``."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        return 1.0 + np.log(np.maximum(xi, _EPS))
+        xi = as_tensor(xi)
+        return 1.0 + torch.log(xi.clamp_min(_EPS))
 
     def hsecond(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``h''(xi) = 1 / xi``."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        return 1.0 / np.maximum(xi, _EPS)
+        xi = as_tensor(xi)
+        return 1.0 / xi.clamp_min(_EPS)
 
     def primal_recovery(
         self,
@@ -69,13 +66,13 @@ class EntropyPerturbation(SeparablePerturbation):
     ) -> Tuple[ArrayLike, ArrayLike]:
         """Recover ``xi*(eta) = clip(exp(eta - 1), lo, hi)``."""
         del params
-        eta = np.asarray(eta, dtype=float)
-        return self._clip_interior(np.exp(eta - 1.0), lo, hi)
+        eta = as_tensor(eta)
+        return self._clip_interior(torch.exp(eta - 1.0), lo, hi)
 
     def inv_hess_weight(self, xi_star: ArrayLike, params: Any) -> ArrayLike:
         """Return ``1 / h'' = xi*`` (cheaper than ``1 / hsecond``)."""
         del params
-        return np.asarray(xi_star, dtype=float)
+        return as_tensor(xi_star)
 
     def cvxpy_h(self, x: Any, params: Any) -> Any:
         """Return ``xi log xi = -entr(xi)`` as a CVXPY expression."""
@@ -97,20 +94,20 @@ class LogitEntropyPerturbation(SeparablePerturbation):
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``xi log xi + (1-xi) log(1-xi)`` (with corner limits = 0)."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        return xlogy(xi, xi) + xlogy(1.0 - xi, 1.0 - xi)
+        xi = as_tensor(xi)
+        return torch.special.xlogy(xi, xi) + torch.special.xlogy(1.0 - xi, 1.0 - xi)
 
     def hprime(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``h'(xi) = log(xi / (1-xi))`` (the logit)."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        return np.log(np.maximum(xi, _EPS)) - np.log(np.maximum(1.0 - xi, _EPS))
+        xi = as_tensor(xi)
+        return torch.log(xi.clamp_min(_EPS)) - torch.log((1.0 - xi).clamp_min(_EPS))
 
     def hsecond(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``h''(xi) = 1 / (xi (1-xi))``."""
         del params
-        xi = np.asarray(xi, dtype=float)
-        return 1.0 / np.maximum(xi * (1.0 - xi), _EPS)
+        xi = as_tensor(xi)
+        return 1.0 / (xi * (1.0 - xi)).clamp_min(_EPS)
 
     def primal_recovery(
         self,
@@ -121,13 +118,13 @@ class LogitEntropyPerturbation(SeparablePerturbation):
     ) -> Tuple[ArrayLike, ArrayLike]:
         """Recover ``xi*(eta) = clip(sigma(eta), lo, hi)``."""
         del params
-        eta = np.asarray(eta, dtype=float)
-        return self._clip_interior(expit(eta), lo, hi)
+        eta = as_tensor(eta)
+        return self._clip_interior(torch.special.expit(eta), lo, hi)
 
     def inv_hess_weight(self, xi_star: ArrayLike, params: Any) -> ArrayLike:
         """Return ``1 / h'' = xi* (1 - xi*)``."""
         del params
-        xi = np.asarray(xi_star, dtype=float)
+        xi = as_tensor(xi_star)
         return xi * (1.0 - xi)
 
     def cvxpy_h(self, x: Any, params: Any) -> Any:

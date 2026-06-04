@@ -18,29 +18,27 @@ from __future__ import annotations
 
 from typing import Callable, Tuple
 
-import numpy as np
-
-from ..utils.typing import ArrayLike
+import torch
 
 
 def armijo_backtracking(
-    phi: Callable[[ArrayLike], float],
+    phi: Callable[[torch.Tensor], float],
     phi0: float,
-    lam: ArrayLike,
-    direction: ArrayLike,
+    lam: torch.Tensor,
+    direction: torch.Tensor,
     directional_derivative: float,
     *,
     c1: float,
     beta: float,
     max_steps: int,
-) -> Tuple[ArrayLike, float, float, bool]:
+) -> Tuple[torch.Tensor, float, float, bool]:
     """
     Backtrack along ``direction`` until Armijo sufficient decrease holds.
 
     Args:
         phi: The objective ``phi(lambda)`` to minimize.
         phi0: Cached value ``phi(lam)`` at the current iterate.
-        lam: Current iterate ``lambda``.
+        lam: Current iterate ``lambda`` (torch tensor).
         direction: Search direction ``d`` (a descent direction).
         directional_derivative: ``grad phi . d`` (must be ``< 0``).
         c1: Armijo parameter in ``(0, 1/2)``.
@@ -53,8 +51,8 @@ def armijo_backtracking(
 
     """
     t = 1.0
-    lam = np.asarray(lam, dtype=float)
-    direction = np.asarray(direction, dtype=float)
+    lam_trial = lam
+    phi_trial = phi0
     for _ in range(max_steps):
         lam_trial = lam + t * direction
         phi_trial = phi(lam_trial)

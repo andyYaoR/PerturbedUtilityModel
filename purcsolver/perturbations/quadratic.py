@@ -16,8 +16,9 @@ from __future__ import annotations
 
 from typing import Any, Tuple
 
-import numpy as np
+import torch
 
+from ..utils.torch_compat import as_tensor
 from ..utils.typing import ArrayLike
 from . import register_perturbation
 from .base import SeparablePerturbation
@@ -33,17 +34,17 @@ class QuadraticPerturbation(SeparablePerturbation):
     def h(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``xi^2 / 2``."""
         del params
-        return 0.5 * np.asarray(xi, dtype=float) ** 2
+        return 0.5 * as_tensor(xi) ** 2
 
     def hprime(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``h'(xi) = xi``."""
         del params
-        return np.asarray(xi, dtype=float)
+        return as_tensor(xi)
 
     def hsecond(self, xi: ArrayLike, params: Any) -> ArrayLike:
         """Return ``h''(xi) = 1``."""
         del params
-        return np.ones_like(np.asarray(xi, dtype=float))
+        return torch.ones_like(as_tensor(xi))
 
     def primal_recovery(
         self,
@@ -54,12 +55,12 @@ class QuadraticPerturbation(SeparablePerturbation):
     ) -> Tuple[ArrayLike, ArrayLike]:
         """Recover ``xi*(eta) = clip(eta, lo, hi)``."""
         del params
-        return self._clip_interior(np.asarray(eta, dtype=float), lo, hi)
+        return self._clip_interior(as_tensor(eta), lo, hi)
 
     def inv_hess_weight(self, xi_star: ArrayLike, params: Any) -> ArrayLike:
         """Return the constant Newton weight ``1 / h'' = 1``."""
         del params
-        return np.ones_like(np.asarray(xi_star, dtype=float))
+        return torch.ones_like(as_tensor(xi_star))
 
     def cvxpy_h(self, x: Any, params: Any) -> Any:
         """Return the CVXPY expression ``xi^2 / 2``."""
