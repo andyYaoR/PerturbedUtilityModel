@@ -29,6 +29,11 @@ class SSNConfig:
         max_iter: Maximum number of semismooth Newton iterations.
         eps0: Initial / maximum Newton regularization ``eps_0``.  The per-step
             regularizer is ``eps_k = min(eps0, ||r||)`` (2-norm), floored below.
+            Keep it small: it only needs to make ``H + eps_k I`` SPD (the active
+            Hessian is low-rank for sparse single-OD problems).  A large ``eps0``
+            over-damps the Newton step and destroys the quadratic convergence
+            (e.g. on hard instances ``1e-2`` stalls where ``1e-7`` converges in
+            ~15 iterations).
         eps_floor: Hard lower bound on ``eps_k``.  Keeps the Newton system
             solvable when the active set is empty/degenerate (``H = 0``), where
             ``eps_k I`` is doing double duty as regularizer and nullspace cover.
@@ -56,7 +61,7 @@ class SSNConfig:
 
     tol: float = 1e-9
     max_iter: int = 100
-    eps0: float = 1e-2
+    eps0: float = 1e-7
     eps_floor: float = 1e-12
     armijo_c1: float = 1e-4
     armijo_beta: float = 0.5
