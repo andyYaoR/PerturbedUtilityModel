@@ -82,8 +82,9 @@ def run(net_key: str, use_cvxpy: bool) -> None:
 
     print(f"\n=== Chicago {net_key} (n={n}, m={m}) ===")
     print(
-        f"{'perturbation':12s} {'beta':>5s} {'SSN ms':>8s} {'nit':>4s} "
-        f"{'resid':>8s} {'CVXPY ms':>9s} {'status':>9s} {'max|dx|':>9s}"
+        f"{'perturbation':12s} {'beta':>5s} {'conv':>5s} {'SSN ms':>8s} "
+        f"{'nit':>4s} {'resid':>8s} {'failbest':>8s} {'CVXPY ms':>9s} "
+        f"{'status':>9s} {'max|dx|':>9s}"
     )
 
     for pert_name, (make_pert, cvxpy_h, gamma) in PERTS.items():
@@ -95,6 +96,7 @@ def run(net_key: str, use_cvxpy: bool) -> None:
             solver.preprocess(prob)
 
             ssn_ms, nits, resids, errs, cvx_ms, status = [], [], [], [], [], "-"
+            fail_best = []
             for o, d in ods:
                 b = np.zeros(n)
                 b[o] = 1.0
@@ -105,6 +107,10 @@ def run(net_key: str, use_cvxpy: bool) -> None:
 
                 res = _solve()
                 if not res.success:
+                    if res.residual_history:
+                        fail_best.append(min(res.residual_history))
+                    else:
+                        fail_best.append(res.residual)
                     continue
                 ssn_ms.append(_median_time(_solve, repeats=3))
                 nits.append(res.nit)
@@ -124,14 +130,21 @@ def run(net_key: str, use_cvxpy: bool) -> None:
                         errs.append(float(np.abs(to_numpy(res.x) - x.value).max()))
 
             if not ssn_ms:
-                print(f"{pert_name:12s} {beta:5.1f}  (no feasible OD-pair converged)")
+                fail_str = f"{min(fail_best):8.1e}" if fail_best else f"{'-':>8s}"
+                print(
+                    f"{pert_name:12s} {beta:5.1f} {0:2d}/{len(ods):<2d} "
+                    f"{'-':>8s} {'-':>4s} {'-':>8s} {fail_str} "
+                    f"{'-':>9s} {'-':>9s} {'-':>9s}"
+                )
                 continue
             cvx_str = f"{statistics.median(cvx_ms):9.1f}" if cvx_ms else f"{'-':>9s}"
             err_str = f"{statistics.median(errs):9.1e}" if errs else f"{'-':>9s}"
+            fail_str = f"{min(fail_best):8.1e}" if fail_best else f"{'-':>8s}"
             print(
-                f"{pert_name:12s} {beta:5.1f} {statistics.median(ssn_ms):8.1f} "
-                f"{int(statistics.median(nits)):4d} {statistics.median(resids):8.0e} "
-                f"{cvx_str} {status:>9s} {err_str}"
+                f"{pert_name:12s} {beta:5.1f} {len(ssn_ms):2d}/{len(ods):<2d} "
+                f"{statistics.median(ssn_ms):8.1f} {int(statistics.median(nits)):4d} "
+                f"{statistics.median(resids):8.0e} {fail_str} {cvx_str} "
+                f"{status:>9s} {err_str}"
             )
 
 

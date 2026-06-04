@@ -16,14 +16,16 @@ gradient ``grad phi = A x_hat - b =: r``, and generalized Hessian
 
 Each iteration solves the regularized Newton system ``(H + eps I) d = -r`` (the
 linear solve is delegated to LaplacianSolve via :class:`LaplacianBackend`) and
-globalizes it with a **Levenberg-Marquardt trust region**: the damping ``eps`` is
-adapted from the actual-vs-predicted reduction ratio ``rho`` of the convex dual
-``phi``.  This converges from *any* start -- including the empty-active-set
-``lambda=0`` where ``H=0`` for hard-saturation perturbations (quadratic, sieve) --
-needs no per-instance tuning (``eps`` self-scales), and **preserves the sparse
-active set** (no smoothing / barrier).  ``eps`` shrinks toward a pure Newton step
-as the model becomes trustworthy, giving the local Q-quadratic rate from strong
-semismoothness; it grows only when a step is poor (rank-deficient ``H``).
+globalizes it with a **Levenberg-Marquardt trust-region heuristic**: the damping
+``eps`` is adapted from the actual-vs-predicted reduction ratio ``rho`` of the
+convex dual ``phi``.  This preserves the sparse active set (no smoothing /
+barrier) and works well on many small and entropy-like instances, but it is not a
+complete global-convergence algorithm for hard-saturation cold starts.  In large
+single-OD road-network cases with ``lambda=0`` and an empty active set
+(quadratic / polynomial sieve), objective decrease can be too weak a progress
+measure for stationarity.  The staged development plan therefore treats this LM
+path as the current baseline and builds a separate theory-backed global phase
+before exact SSN polishing.
 
 All solver math runs on torch tensors (CPU ``float64`` by default) under
 ``torch.no_grad`` -- torch is the data container, not an autograd graph (the
@@ -212,7 +214,6 @@ class RegularizedSSNSolver(ForwardSolver):
                 # adapt eps from the actual-vs-predicted reduction ratio rho.
                 pred_floor = _PHI_NOISE * (abs(phi0) + 1.0)  # below this, phi-diffs are noise
                 accepted = False
-                converged_floor = False
                 for _try in range(cfg.lm_max_tries):
                     eps = min(max(eps, cfg.eps_floor), _LM_EPS_MAX)
                     direction = self._backend.solve(weight, eps, -r)
@@ -221,11 +222,12 @@ class RegularizedSSNSolver(ForwardSolver):
                     pred = -0.5 * rd + 0.5 * eps * dd  # predicted dual decrease (> 0)
                     if pred <= pred_floor:
                         # Predicted decrease is below phi's numerical precision:
-                        # we are at a stationary point of the convex dual = the
-                        # global optimum (rho would just be noise).
+                        # rho would just be noise.  Accept the step, then let the
+                        # next outer iteration certify convergence from the true
+                        # feasibility residual rather than from objective scale.
                         lam = lam + direction
                         accepted = True
-                        converged_floor = True
+                        eps *= _LM_DEC
                         break
                     phi_new = self._phi(v, lam + direction, b_use, gamma)
                     rho = (phi0 - phi_new) / pred
@@ -240,9 +242,6 @@ class RegularizedSSNSolver(ForwardSolver):
                     accepted = True
                     break
                 eps_trace.append(eps)
-                if converged_floor:
-                    status = STATUS_CONVERGED
-                    break
                 if not accepted:
                     status = STATUS_LINESEARCH_FAILED
                     break
@@ -251,7 +250,7 @@ class RegularizedSSNSolver(ForwardSolver):
             _, x_hat, interior = self._recover(v, lam, gamma)
             r = c.matvec(x_hat) - b_use
             r_inf = float(r.abs().max()) if r.numel() else 0.0
-            if status == STATUS_CONVERGED or r_inf < cfg.tol:
+            if r_inf < cfg.tol:
                 status = STATUS_CONVERGED
 
             f_conj = float((v @ x_hat) - (c.ell @ pert.h(x_hat, gamma)))
@@ -393,10 +392,10 @@ class RegularizedSSNSolver(ForwardSolver):
                     rho = (phi0 - phi_batch(lam + direction)) / safe_pred
                     accept = (~step_done) & ((rho >= _LM_ACCEPT) | floor_hit)
                     lam = torch.where(accept.unsqueeze(1), lam + direction, lam)
-                    converged = converged | floor_hit
                     grew = (~step_done) & ~accept
                     grew = grew | (accept & (rho < _LM_POOR) & ~floor_hit)
                     shrank = accept & (rho > _LM_GOOD) & ~floor_hit
+                    shrank = shrank | floor_hit
                     eps = torch.where(grew, eps * _LM_INC, eps)
                     eps = torch.where(shrank, eps * _LM_DEC, eps)
                     step_done = step_done | accept
@@ -405,7 +404,7 @@ class RegularizedSSNSolver(ForwardSolver):
             x_hat, interior = pert.primal_recovery(eta, lo, hi, gamma)
             r = c.matvec_batch(x_hat) - b_batch
             r_inf = r.abs().amax(dim=1)
-            converged = converged | (r_inf < cfg.tol)
+            converged = r_inf < cfg.tol
             if bool(converged.all()):
                 status = STATUS_CONVERGED
             f_conj = (v * x_hat).sum(dim=1) - (ell * pert.h(x_hat, gamma)).sum(dim=1)
