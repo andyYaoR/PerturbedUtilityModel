@@ -19,8 +19,10 @@ from __future__ import annotations
 
 from typing import Any, Tuple
 
+import numpy as np
 import torch
 
+from ..utils.native import native_available, native_core
 from ..utils.torch_compat import as_tensor, to_numpy
 from ..utils.typing import ArrayLike
 from . import register_perturbation
@@ -126,12 +128,45 @@ class PolynomialSievePerturbation(SeparablePerturbation):
     ) -> Tuple[ArrayLike, ArrayLike]:
         """Recover ``xi*(eta)`` by inverting the monotone ``h'`` on ``[lo, hi]``."""
         coeffs = self._coeffs(params)
+        if native_available():
+            return self._recover_native(eta, lo, hi, coeffs)
         return solve_monotone(
             lambda z: self.hprime(z, coeffs),
             lambda z: self.hsecond(z, coeffs),
             eta,
             lo,
             hi,
+        )
+
+    def _recover_native(
+        self, eta: ArrayLike, lo: ArrayLike, hi: ArrayLike, coeffs: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Recover ``xi*(eta)`` via the native polynomial-inversion kernel.
+
+        Args:
+            eta: Reduced utilities.
+            lo: Lower bounds (broadcastable to ``eta``).
+            hi: Upper bounds (broadcastable to ``eta``).
+            coeffs: The sieve shape parameters ``gamma``.
+
+        Returns:
+            ``(xi_star, interior_mask)`` as torch tensors on ``eta``'s device.
+
+        """
+        eta_t, lo_t, hi_t = torch.broadcast_tensors(as_tensor(eta), as_tensor(lo), as_tensor(hi))
+        shape = tuple(eta_t.shape)
+        # h' coefficients (low to high): c_0 = 0, c_1 = 1, c_{l-1} = gamma_l.
+        hp_coeffs = np.concatenate([[0.0, 1.0], to_numpy(coeffs)]).astype(np.float64)
+        et = np.ascontiguousarray(to_numpy(eta_t).ravel())
+        lon = np.ascontiguousarray(to_numpy(lo_t).ravel())
+        hin = np.ascontiguousarray(to_numpy(hi_t).ravel())
+        xi = np.empty(et.size, dtype=np.float64)
+        interior = np.empty(et.size, dtype=np.uint8)
+        native_core().recovery_poly_f64(hp_coeffs, et, lon, hin, xi, interior)
+        return (
+            as_tensor(xi.reshape(shape), device=eta_t.device),
+            as_tensor(interior.reshape(shape).astype(bool), dtype=torch.bool, device=eta_t.device),
         )
 
     def gamma_feasible(self, params: Any) -> bool:

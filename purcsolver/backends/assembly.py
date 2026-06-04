@@ -16,6 +16,8 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
+from ..utils.native import native_available, native_core
+
 
 class CSCAssembler:
     """
@@ -95,9 +97,15 @@ class CSCAssembler:
             The ``(nnz,)`` value array aligned to :attr:`indices` / :attr:`indptr`.
 
         """
-        w = np.asarray(w, dtype=float)
-        # bincount is the fast scatter-add (np.add.at is markedly slower); slots
-        # are precomputed in [0, nnz), so minlength pins the output length.
+        w = np.ascontiguousarray(w, dtype=float)
+        if native_available():
+            out = np.empty(self.nnz, dtype=float)
+            native_core().csc_assemble_f64(
+                self._slot, self._coeff, self._srci, w, self._diag_slot, float(eps), out
+            )
+            return out
+        # Fallback: bincount is the fast scatter-add (np.add.at is markedly slower);
+        # slots are precomputed in [0, nnz), so minlength pins the output length.
         data = np.bincount(self._slot, weights=self._coeff * w[self._srci], minlength=self.nnz)
         data[self._diag_slot] += eps
         return data

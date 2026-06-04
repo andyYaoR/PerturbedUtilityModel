@@ -13,7 +13,10 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <vector>
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -25,6 +28,8 @@ using Float64MutArr1D =
     nb::ndarray<nb::numpy, double, nb::ndim<1>, nb::device::cpu, nb::c_contig>;
 using Int64Arr1D =
     nb::ndarray<nb::numpy, const int64_t, nb::ndim<1>, nb::device::cpu, nb::c_contig>;
+using Uint8MutArr1D =
+    nb::ndarray<nb::numpy, uint8_t, nb::ndim<1>, nb::device::cpu, nb::c_contig>;
 
 namespace {
 
@@ -68,6 +73,91 @@ void csr_spmv_f64(Int64Arr1D indptr, Int64Arr1D indices, Float64Arr1D data,
   }
 }
 
+// Fixed-pattern assembly of the Newton matrix values:
+//   out[slot[p]] += coeff[p] * w[srci[p]]  (the A diag(w) A^T triple product),
+//   then out[diag_slot[j]] += eps  (the eps*I regularizer).
+// out has length nnz (the fixed CSC pattern) and is zeroed first.  This replaces
+// the numpy bincount scatter in the per-iteration hot path.
+void csc_assemble_f64(Int64Arr1D slot, Float64Arr1D coeff, Int64Arr1D srci,
+                      Float64Arr1D w, Int64Arr1D diag_slot, double eps,
+                      Float64MutArr1D out) {
+  const int64_t ncontrib = static_cast<int64_t>(slot.shape(0));
+  const int64_t kdiag = static_cast<int64_t>(diag_slot.shape(0));
+  const int64_t nnz = static_cast<int64_t>(out.shape(0));
+  const int64_t* __restrict__ sp = slot.data();
+  const double* __restrict__ cp = coeff.data();
+  const int64_t* __restrict__ si = srci.data();
+  const double* __restrict__ wp = w.data();
+  const int64_t* __restrict__ dp = diag_slot.data();
+  double* __restrict__ op = out.data();
+  nb::gil_scoped_release release;
+  for (int64_t i = 0; i < nnz; ++i) op[i] = 0.0;
+  for (int64_t p = 0; p < ncontrib; ++p) op[sp[p]] += cp[p] * wp[si[p]];
+  for (int64_t j = 0; j < kdiag; ++j) op[dp[j]] += eps;
+}
+
+// Horner evaluation of a polynomial with coefficients c[0..deg] (low to high).
+inline double horner(const double* c, int64_t deg, double x) {
+  double s = c[deg];
+  for (int64_t k = deg - 1; k >= 0; --k) s = s * x + c[k];
+  return s;
+}
+
+// Vectorized inverse of a strictly-increasing polynomial h'(xi) = eta on the box
+// [lo, hi], by safeguarded Newton ("rtsafe").  coeffs are the h' coefficients
+// (low to high); the derivative h'' is taken analytically.  Saturated coords
+// clip to the bound (interior=0); interior coords solve the unique bracketed
+// root.  This is the parameterized native recovery kernel for the sieve.
+void recovery_poly_f64(Float64Arr1D coeffs, Float64Arr1D eta, Float64Arr1D lo,
+                       Float64Arr1D hi, Float64MutArr1D xi_out,
+                       Uint8MutArr1D interior_out, int64_t max_iter,
+                       double xtol) {
+  const int64_t deg = static_cast<int64_t>(coeffs.shape(0)) - 1;
+  const int64_t n = static_cast<int64_t>(eta.shape(0));
+  const double* cc = coeffs.data();
+  const double* ep = eta.data();
+  const double* lp = lo.data();
+  const double* hp = hi.data();
+  double* xp = xi_out.data();
+  uint8_t* ip = interior_out.data();
+
+  // Derivative coefficients dc[k] = (k+1) c[k+1], degree deg-1.
+  std::vector<double> dc(deg > 0 ? static_cast<std::size_t>(deg) : 1, 0.0);
+  for (int64_t k = 0; k < deg; ++k) dc[k] = (k + 1) * cc[k + 1];
+  const double* dcp = dc.data();
+  const int64_t ddeg = deg - 1;
+
+  nb::gil_scoped_release release;
+  for (int64_t i = 0; i < n; ++i) {
+    const double L = lp[i], H = hp[i], t = ep[i];
+    const double gL = horner(cc, deg, L), gH = horner(cc, deg, H);
+    if (t <= gL) {
+      xp[i] = L;
+      ip[i] = 0;
+      continue;
+    }
+    if (t >= gH) {
+      xp[i] = H;
+      ip[i] = 0;
+      continue;
+    }
+    double a = L, b = H;
+    double x = L + (t - gL) / (gH - gL) * (H - L);
+    for (int64_t it = 0; it < max_iter; ++it) {
+      const double f = horner(cc, deg, x) - t;
+      if (f > 0.0) b = x; else a = x;
+      const double df = (ddeg >= 0) ? horner(dcp, ddeg, x) : 0.0;
+      double xn = x - f / df;
+      if (!(xn > a && xn < b) || !std::isfinite(xn)) xn = 0.5 * (a + b);
+      const double step = xn - x;
+      x = xn;
+      if (std::fabs(step) <= xtol * (1.0 + std::fabs(x))) break;
+    }
+    xp[i] = x;
+    ip[i] = (x > L && x < H) ? 1 : 0;
+  }
+}
+
 }  // namespace
 
 NB_MODULE(_purcsolver_core, m) {
@@ -78,4 +168,11 @@ NB_MODULE(_purcsolver_core, m) {
   m.def("csr_spmv_f64", &csr_spmv_f64, "indptr"_a, "indices"_a, "data"_a, "x"_a,
         "y"_a,
         "Rectangular CSR SpMV y = A @ x (float64, GIL released); y overwritten.");
+  m.def("csc_assemble_f64", &csc_assemble_f64, "slot"_a, "coeff"_a, "srci"_a,
+        "w"_a, "diag_slot"_a, "eps"_a, "out"_a,
+        "Assemble Newton matrix values A diag(w) A^T + eps I (GIL released).");
+  m.def("recovery_poly_f64", &recovery_poly_f64, "coeffs"_a, "eta"_a, "lo"_a,
+        "hi"_a, "xi_out"_a, "interior_out"_a, "max_iter"_a = 80,
+        "xtol"_a = 1e-14,
+        "Invert a monotone polynomial h'(xi)=eta on [lo,hi] (GIL released).");
 }
