@@ -39,7 +39,12 @@ class SSNConfig:
             ``eps_k I`` is doing double duty as regularizer and nullspace cover.
         armijo_c1: Armijo sufficient-decrease parameter (``0 < c1 < 1/2``).
         armijo_beta: Armijo backtracking shrink factor in ``(0, 1)``.
-        max_linesearch: Maximum backtracking steps per Newton iteration.
+        max_linesearch: Maximum backtracking steps per Newton iteration (legacy
+            Armijo path).
+        lm_eps0: Cold-start Levenberg-Marquardt damping (warm-started thereafter).
+            Optimistic and small: well-conditioned solves stay near-Newton, while
+            the empty-active-set start needs only a few damping increases.
+        lm_max_tries: Maximum damping adjustments within one Newton iteration.
         stall_patience: Stop early if the residual fails to improve by more than
             a tiny relative amount for this many consecutive iterations *and* it
             is already below :attr:`stall_floor` (i.e. genuinely at the numerical
@@ -68,6 +73,8 @@ class SSNConfig:
     max_linesearch: int = 30
     stall_patience: int = 8
     stall_floor: float = 1e-6
+    lm_eps0: float = 1e-2
+    lm_max_tries: int = 40
     warm_start: bool = True
     laplacian: Dict[str, Any] = field(default_factory=dict)
     profile: bool = False
@@ -99,6 +106,10 @@ class SSNConfig:
             raise ValueError(f"max_linesearch must be >= 1, got {self.max_linesearch}")
         if self.stall_patience < 1:
             raise ValueError(f"stall_patience must be >= 1, got {self.stall_patience}")
+        if self.lm_eps0 <= 0:
+            raise ValueError(f"lm_eps0 must be > 0, got {self.lm_eps0}")
+        if self.lm_max_tries < 1:
+            raise ValueError(f"lm_max_tries must be >= 1, got {self.lm_max_tries}")
 
     def laplacian_config(self) -> Optional[Any]:
         """

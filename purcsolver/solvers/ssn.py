@@ -14,12 +14,16 @@ gradient ``grad phi = A x_hat - b =: r``, and generalized Hessian
 ``H = A diag(D) A^T`` where ``D_i = 1/(ell_i h''(x_hat_i))`` on the active set
 ``{lo < x_hat_i < hi}`` and ``0`` at saturated coordinates.
 
-Each iteration solves the regularized Newton system ``(H + eps_k I) d = -r`` (the
-linear solve is delegated to LaplacianSolve via :class:`LaplacianBackend`) with
-``eps_k = clip(min(eps0, ||r||), eps_floor, eps0)`` -- which both makes the
-system SPD and bounds the step along ``H``'s nullspace, so no separate multiplier
-gauge-fixing is needed -- followed by an Armijo line search on ``phi``.  Strong
-semismoothness gives local Q-quadratic convergence; the line search globalizes.
+Each iteration solves the regularized Newton system ``(H + eps I) d = -r`` (the
+linear solve is delegated to LaplacianSolve via :class:`LaplacianBackend`) and
+globalizes it with a **Levenberg-Marquardt trust region**: the damping ``eps`` is
+adapted from the actual-vs-predicted reduction ratio ``rho`` of the convex dual
+``phi``.  This converges from *any* start -- including the empty-active-set
+``lambda=0`` where ``H=0`` for hard-saturation perturbations (quadratic, sieve) --
+needs no per-instance tuning (``eps`` self-scales), and **preserves the sparse
+active set** (no smoothing / barrier).  ``eps`` shrinks toward a pure Newton step
+as the model becomes trustworthy, giving the local Q-quadratic rate from strong
+semismoothness; it grows only when a step is poor (rank-deficient ``H``).
 
 All solver math runs on torch tensors (CPU ``float64`` by default) under
 ``torch.no_grad`` -- torch is the data container, not an autograd graph (the
@@ -46,10 +50,20 @@ from ..utils.logging import get_logger
 from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor
 from ..utils.typing import ArrayLike
 from . import SOLVERS
-from ._linesearch import armijo_backtracking_batch, armijo_backtracking_t
 from .base import ForwardSolver
 
 _logger = get_logger(__name__)
+
+# Levenberg-Marquardt / trust-region constants (problem-independent -> no
+# per-instance tuning).  rho = actual/predicted reduction of the convex dual
+# decides whether to accept the step and how to rescale the damping eps.
+_LM_ACCEPT = 0.1  # accept the step if rho exceeds this
+_LM_GOOD = 0.75  # rho above this -> model trustworthy -> reduce damping (-> Newton)
+_LM_POOR = 0.25  # rho below this (but accepted) -> increase damping
+_LM_INC = 4.0  # damping growth factor on a poor / rejected step
+_LM_DEC = 0.25  # damping shrink factor on a good step
+_LM_EPS_MAX = 1e12  # damping cap
+_PHI_NOISE = 1e-12  # relative floor below which dual-objective differences are noise
 
 
 class RegularizedSSNSolver(ForwardSolver):
@@ -65,6 +79,8 @@ class RegularizedSSNSolver(ForwardSolver):
         self._backend: Optional[LaplacianBackend] = None
         self._lam: Optional[torch.Tensor] = None
         self._lam_batch: Optional[torch.Tensor] = None
+        self._lm_eps: Optional[float] = None  # persisted LM damping (warm-started)
+        self._lm_eps_batch: Optional[torch.Tensor] = None  # per-system LM damping
 
     def preprocess(self, problem: PUMProblem) -> None:
         """
@@ -100,6 +116,26 @@ class RegularizedSSNSolver(ForwardSolver):
         eta = (v + c.rmatvec(lam)) / c.ell
         x_hat, interior = pert.primal_recovery(eta, c.lo, c.hi, gamma)
         return eta, x_hat, interior
+
+    def _phi(self, v: torch.Tensor, lam: torch.Tensor, b: torch.Tensor, gamma: ArrayLike) -> float:
+        """
+        Evaluate the convex dual objective ``phi(lambda)``.
+
+        Args:
+            v: Link utilities.
+            lam: Multipliers.
+            b: Equality right-hand side.
+            gamma: Perturbation parameters.
+
+        Returns:
+            ``phi(lambda) = -b^T lambda + sum_i ell_i h*(eta_i)``.
+
+        """
+        c = self._problem.constraint
+        pert = self._problem.perturbation
+        eta = (v + c.rmatvec(lam)) / c.ell
+        conj = pert.conj_box(eta, c.lo, c.hi, gamma)
+        return float(-(b @ lam) + (c.ell @ conj))
 
     def solve(
         self,
@@ -148,9 +184,9 @@ class RegularizedSSNSolver(ForwardSolver):
         nit = 0
         x_hat = torch.zeros(c.num_coords, dtype=DEFAULT_DTYPE)
         interior = torch.zeros(c.num_coords, dtype=torch.bool)
-        ls_steps: list[float] = []
-        best_r = float("inf")
-        stalled = 0
+        eps_trace: list[float] = []
+        # Levenberg-Marquardt damping, warm-started across solves within a problem.
+        eps = self._lm_eps if (cfg.warm_start and self._lm_eps is not None) else cfg.lm_eps0
 
         with torch.no_grad():
             for it in range(cfg.max_iter):
@@ -164,55 +200,50 @@ class RegularizedSSNSolver(ForwardSolver):
                     nit = it
                     break
 
-                # Stagnation: residual no longer improving AND already at the
-                # numerical floor (r is non-monotone, so only a plateau at small
-                # r means stalled -- a plateau at large r is just slow progress).
-                if r_inf < best_r * (1.0 - 1e-3):
-                    best_r = r_inf
-                    stalled = 0
-                else:
-                    stalled += 1
-                    if stalled >= cfg.stall_patience and best_r < cfg.stall_floor:
-                        status = STATUS_STALLED
-                        break
-
                 # Newton weights: D_i / ell on the active set, 0 at saturated coords.
                 weight = torch.where(
                     interior,
                     pert.inv_hess_weight(x_hat, gamma) / c.ell,
                     torch.zeros_like(x_hat),
                 )
-                eps_k = min(cfg.eps0, float(r.norm()))
-                eps_k = max(eps_k, cfg.eps_floor)
+                phi0 = float(-(b_use @ lam)) + float(c.ell @ (eta * x_hat - pert.h(x_hat, gamma)))
 
-                direction = self._backend.solve(weight, eps_k, -r)
-                dderiv = float(r @ direction)  # grad phi . d  (should be < 0)
-
-                # Line search on phi as a function of step length t.  eta(t) =
-                # eta + t * (A^T d / ell), so A^T d is computed once (not per
-                # backtracking step), and phi(0) reuses the iterate's x_hat
-                # (eta * x_hat - h) instead of recomputing the recovery.
-                atd_over_ell = c.rmatvec(direction) / c.ell
-                b_dot_d = float(b_use @ direction)
-                phi_lin0 = float(-(b_use @ lam))
-                conj0 = eta * x_hat - pert.h(x_hat, gamma)
-                phi0 = phi_lin0 + float(c.ell @ conj0)
-
-                def phi_of_t(t, _eta=eta, _atde=atd_over_ell, _lin=phi_lin0, _bd=b_dot_d):
-                    conj = pert.conj_box(_eta + t * _atde, c.lo, c.hi, gamma)
-                    return _lin - t * _bd + float(c.ell @ conj)
-
-                t, _phi_new, ok = armijo_backtracking_t(
-                    phi_of_t,
-                    phi0,
-                    dderiv,
-                    c1=cfg.armijo_c1,
-                    beta=cfg.armijo_beta,
-                    max_steps=cfg.max_linesearch,
-                )
-                lam = lam + t * direction
-                ls_steps.append(t)
-                if not ok:
+                # Levenberg-Marquardt trust region: solve (H + eps I) d = -r and
+                # adapt eps from the actual-vs-predicted reduction ratio rho.
+                pred_floor = _PHI_NOISE * (abs(phi0) + 1.0)  # below this, phi-diffs are noise
+                accepted = False
+                converged_floor = False
+                for _try in range(cfg.lm_max_tries):
+                    eps = min(max(eps, cfg.eps_floor), _LM_EPS_MAX)
+                    direction = self._backend.solve(weight, eps, -r)
+                    rd = float(r @ direction)  # grad phi . d  (< 0)
+                    dd = float(direction @ direction)
+                    pred = -0.5 * rd + 0.5 * eps * dd  # predicted dual decrease (> 0)
+                    if pred <= pred_floor:
+                        # Predicted decrease is below phi's numerical precision:
+                        # we are at a stationary point of the convex dual = the
+                        # global optimum (rho would just be noise).
+                        lam = lam + direction
+                        accepted = True
+                        converged_floor = True
+                        break
+                    phi_new = self._phi(v, lam + direction, b_use, gamma)
+                    rho = (phi0 - phi_new) / pred
+                    if rho < _LM_ACCEPT:
+                        eps *= _LM_INC  # poor/negative step: shrink the trust region
+                        continue
+                    lam = lam + direction
+                    if rho > _LM_GOOD:
+                        eps *= _LM_DEC  # model trustworthy: expand toward Newton
+                    elif rho < _LM_POOR:
+                        eps *= _LM_INC
+                    accepted = True
+                    break
+                eps_trace.append(eps)
+                if converged_floor:
+                    status = STATUS_CONVERGED
+                    break
+                if not accepted:
                     status = STATUS_LINESEARCH_FAILED
                     break
 
@@ -227,6 +258,7 @@ class RegularizedSSNSolver(ForwardSolver):
 
         if cfg.warm_start:
             self._lam = lam.clone()
+            self._lm_eps = eps
 
         return PURCResult(
             x=x_hat,
@@ -239,7 +271,8 @@ class RegularizedSSNSolver(ForwardSolver):
             residual_history=history,
             extras={
                 "active_set_size": int(interior.sum()),
-                "linesearch_steps": ls_steps,
+                "lm_eps_trace": eps_trace,
+                "lm_eps_final": eps,
                 "backend_method": self._backend.method,
                 "backend_phase": self._backend.phase,
             },
@@ -308,7 +341,19 @@ class RegularizedSSNSolver(ForwardSolver):
         status = STATUS_MAX_ITER
         nit = 0
         x_hat = torch.zeros((n_sys, c.num_coords), dtype=DEFAULT_DTYPE)
-        eps0 = torch.full((n_sys,), cfg.eps0, dtype=DEFAULT_DTYPE)
+        if (
+            cfg.warm_start
+            and self._lm_eps_batch is not None
+            and self._lm_eps_batch.shape[0] == n_sys
+        ):
+            eps = self._lm_eps_batch.clone()
+        else:
+            eps = torch.full((n_sys,), cfg.lm_eps0, dtype=DEFAULT_DTYPE)
+
+        def phi_batch(lvec):
+            eta_t = (v + c.rmatvec_batch(lvec)) / ell
+            conj = pert.conj_box(eta_t, lo, hi, gamma)
+            return -(b_batch * lvec).sum(dim=1) + (ell * conj).sum(dim=1)
 
         with torch.no_grad():
             for it in range(cfg.max_iter):
@@ -324,34 +369,37 @@ class RegularizedSSNSolver(ForwardSolver):
                     nit = it
                     break
 
-                active = (~converged).unsqueeze(1)
                 weight = torch.where(
                     interior, pert.inv_hess_weight(x_hat, gamma) / ell, torch.zeros_like(x_hat)
                 )
-                eps_k = torch.clamp(torch.minimum(r.norm(dim=1), eps0), min=cfg.eps_floor)
-                direction = self._backend.solve_batch(weight, eps_k, -r) * active
+                phi0 = -(b_batch * lam).sum(dim=1) + (
+                    ell * (eta * x_hat - pert.h(x_hat, gamma))
+                ).sum(dim=1)
+                pred_floor = _PHI_NOISE * (phi0.abs() + 1.0)
 
-                # Vectorized line search: eta(t) = eta + t * (A^T d / ell).
-                atd_over_ell = c.rmatvec_batch(direction) / ell
-                bd = (b_batch * direction).sum(dim=1)
-                phi_lin0 = -(b_batch * lam).sum(dim=1)
-                conj0 = eta * x_hat - pert.h(x_hat, gamma)
-                phi0 = phi_lin0 + (conj0 * ell).sum(dim=1)
-                dderiv = (r * direction).sum(dim=1)
-
-                def phi_of_t(t, _eta=eta, _atde=atd_over_ell, _lin=phi_lin0, _bd=bd):
-                    conj = pert.conj_box(_eta + t.unsqueeze(1) * _atde, lo, hi, gamma)
-                    return _lin - t * _bd + (conj * ell).sum(dim=1)
-
-                t, _ok = armijo_backtracking_batch(
-                    phi_of_t,
-                    phi0,
-                    dderiv,
-                    c1=cfg.armijo_c1,
-                    beta=cfg.armijo_beta,
-                    max_steps=cfg.max_linesearch,
-                )
-                lam = lam + t.unsqueeze(1) * direction
+                # Per-system Levenberg-Marquardt trust region: each OD-pair adapts
+                # its own damping eps from its rho.  Converged systems take no step.
+                step_done = converged.clone()
+                for _try in range(cfg.lm_max_tries):
+                    if bool(step_done.all()):
+                        break
+                    eps = eps.clamp(cfg.eps_floor, _LM_EPS_MAX)
+                    direction = self._backend.solve_batch(weight, eps, -r)
+                    rd = (r * direction).sum(dim=1)
+                    dd = (direction * direction).sum(dim=1)
+                    pred = -0.5 * rd + 0.5 * eps * dd
+                    floor_hit = (~step_done) & (pred <= pred_floor)
+                    safe_pred = pred.clamp_min(1e-300)
+                    rho = (phi0 - phi_batch(lam + direction)) / safe_pred
+                    accept = (~step_done) & ((rho >= _LM_ACCEPT) | floor_hit)
+                    lam = torch.where(accept.unsqueeze(1), lam + direction, lam)
+                    converged = converged | floor_hit
+                    grew = (~step_done) & ~accept
+                    grew = grew | (accept & (rho < _LM_POOR) & ~floor_hit)
+                    shrank = accept & (rho > _LM_GOOD) & ~floor_hit
+                    eps = torch.where(grew, eps * _LM_INC, eps)
+                    eps = torch.where(shrank, eps * _LM_DEC, eps)
+                    step_done = step_done | accept
 
             eta = (v + c.rmatvec_batch(lam)) / ell
             x_hat, interior = pert.primal_recovery(eta, lo, hi, gamma)
@@ -364,6 +412,7 @@ class RegularizedSSNSolver(ForwardSolver):
 
         if cfg.warm_start:
             self._lam_batch = lam.clone()
+            self._lm_eps_batch = eps.clone()
 
         return PURCResult(
             x=x_hat,
