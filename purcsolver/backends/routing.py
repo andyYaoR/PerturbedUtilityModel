@@ -106,5 +106,7 @@ class LaplacianBackend:
         else:
             # Same pattern across iterations -> reuse the symbolic factorization.
             self._solver.update(M)
-        sol = self._solver.solve(to_numpy(rhs))
+        # LaplacianSolve accepts a CPU torch tensor (zero-copy through its numpy
+        # buffer) and restores the solution to the same type/dtype/device.
+        sol = self._solver.solve(as_tensor(rhs))
         return as_tensor(sol)

@@ -23,29 +23,10 @@ import scipy.sparse as sp
 import torch
 
 from ..utils.sparse import in_range, row_components, to_csr
-from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor
+from ..utils.spmv import CSRMatVec
+from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor, to_numpy
 from ..utils.typing import ArrayLike
 from .base import Polytope
-
-
-def _scipy_to_torch_csr(matrix: sp.csr_matrix, dtype: torch.dtype) -> torch.Tensor:
-    """
-    Convert a SciPy CSR matrix to a torch sparse-CSR tensor.
-
-    Args:
-        matrix: A SciPy CSR matrix.
-        dtype: Target value dtype.
-
-    Returns:
-        The equivalent ``torch.sparse_csr_tensor``.
-
-    """
-    return torch.sparse_csr_tensor(
-        torch.from_numpy(matrix.indptr.astype(np.int64)),
-        torch.from_numpy(matrix.indices.astype(np.int64)),
-        torch.from_numpy(matrix.data.astype(np.float64)).to(dtype),
-        size=matrix.shape,
-    )
 
 
 class GeneralPolytope(Polytope):
@@ -84,8 +65,9 @@ class GeneralPolytope(Polytope):
         self._A_scipy = to_csr(_coerce_to_scipy(A))
         k, n = self._A_scipy.shape
         self._dtype = DEFAULT_DTYPE
-        self._A = _scipy_to_torch_csr(self._A_scipy, self._dtype)
-        self._At = _scipy_to_torch_csr(self._A_scipy.T.tocsr(), self._dtype)
+        # Native CSR SpMV for the hot-path matvecs (A x_hat and A^T lambda).
+        self._mv = CSRMatVec(self._A_scipy)
+        self._mvT = CSRMatVec(self._A_scipy.T.tocsr())
 
         self._b = as_tensor(b).reshape(-1).broadcast_to((k,)).clone()
         self._lo = _broadcast_box(lo, n)
@@ -160,7 +142,10 @@ class GeneralPolytope(Polytope):
 
     def matvec(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Apply ``A`` to a coordinate tensor (torch sparse matvec).
+        Apply ``A`` to a coordinate tensor via the native CSR SpMV.
+
+        The tensor bridges to NumPy zero-copy on CPU; the result is wrapped back
+        on the input's device.
 
         Args:
             x: Tensor of shape ``(N,)``.
@@ -169,11 +154,12 @@ class GeneralPolytope(Polytope):
             ``A @ x`` of shape ``(k,)``.
 
         """
-        return self._A @ as_tensor(x, dtype=self._dtype)
+        xt = as_tensor(x, dtype=self._dtype)
+        return as_tensor(self._mv.matvec(to_numpy(xt)), device=xt.device)
 
     def rmatvec(self, lam: torch.Tensor) -> torch.Tensor:
         """
-        Apply ``A^T`` to a multiplier tensor (torch sparse matvec).
+        Apply ``A^T`` to a multiplier tensor via the native CSR SpMV.
 
         Args:
             lam: Tensor of shape ``(k,)``.
@@ -182,7 +168,8 @@ class GeneralPolytope(Polytope):
             ``A^T @ lam`` of shape ``(N,)``.
 
         """
-        return self._At @ as_tensor(lam, dtype=self._dtype)
+        lt = as_tensor(lam, dtype=self._dtype)
+        return as_tensor(self._mvT.matvec(to_numpy(lt)), device=lt.device)
 
 
 def _coerce_to_scipy(A):
