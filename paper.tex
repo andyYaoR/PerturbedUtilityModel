@@ -447,7 +447,7 @@ $C\hat x=d$.
 $h'$ is finite on the closed interval $[0,1]$. We therefore solve
 \eqref{eq:inner-problem} by a primal--dual interior-point method for the box
 constraints. The method keeps every iterate strictly inside the box, follows the
-central path of a sequence of smooth barrier problems, and computes each Newton
+central path defined by perturbed complementarity, and computes each Newton
 direction by one weighted graph Laplacian solve. This is the complete inner
 solver used by the estimator: no routes are enumerated, and no instance-specific
 tuning parameters are introduced.
@@ -464,14 +464,8 @@ replaces complementarity by
 \begin{equation}\label{eq:kkt}
     x_i z_i=\mu,\qquad (1-x_i)w_i=\mu,\qquad \mu>0.
 \end{equation}
-For fixed $\mu$, the iterate stays strictly inside the box:
-$0<x_i<1$ and $z_i,w_i>0$. Equivalently, the primal component solves the
-log-barrier problem
-\[
-    \min_{Cx=d}\;
-    F(x;\gamma)-v(\beta)^\top x
-    -\mu\sum_i\{\log x_i+\log(1-x_i)\}.
-\]
+For fixed $\mu>0$, these equations keep the iterate strictly inside the box:
+$0<x_i<1$ and $z_i,w_i>0$.
 As $\mu\downarrow0$, the central path approaches the solution of the original
 box-constrained problem.
 
