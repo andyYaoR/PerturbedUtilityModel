@@ -546,35 +546,50 @@ convergent in general \citep{salahi2007mehrotra}. We therefore use the
 safe-step/fast-step globalization of \citet{wright1996superlinear,ralph2000superlinear},
 within the framework of \citet{kojima1994global}.
 
-The globalization keeps every trial point in the wide central neighbourhood
+The globalization keeps every trial point in the wide central neighbourhood. To
+avoid overloading notation, define the average complementarity of any strictly
+interior point $y=(x,\lambda,z,w)$ by
+\begin{equation}\label{eq:mu-bar}
+    \bar\mu(y)
+    :=\bar\mu(x,z,w)
+    =\frac{x^\top z+(\mathbf 1-x)^\top w}{2n}.
+\end{equation}
+The neighbourhood is then the set of points whose \emph{own} complementarity
+products are not too uneven:
 \begin{equation}\label{eq:nbhd}
-    \cN(\nu)=\bigl\{(x,\lambda,z,w):0<x<\mathbf 1,\ z,w>0,\
-        \min_i\bigl(x_iz_i,\ (1-x_i)w_i\bigr)\ge\nu\,\mu\bigr\}.
+    \cN(\nu)=\bigl\{y=(x,\lambda,z,w):0<x<\mathbf 1,\ z,w>0,\
+        \min_i\bigl(x_iz_i,\ (1-x_i)w_i\bigr)\ge\nu\,\bar\mu(y)\bigr\}.
 \end{equation}
-Here $\mu=\{x^\top z+(\mathbf 1-x)^\top w\}/(2n)$ is evaluated at the same point, and
-$\nu\in(0,1)$ is a fixed centrality constant, unrelated to the sieve coefficients
-$\gamma$. Membership in $\cN(\nu)$ means that no lower- or upper-bound
-complementarity product is allowed to fall below a fixed fraction of the average.
+The multiplier $\lambda$ appears in $y$ because it is part of the primal--dual
+iterate, but centrality itself depends only on $(x,z,w)$. The constant
+$\nu\in(0,1)$ is fixed and is unrelated to the sieve coefficients $\gamma$.
+Membership in $\cN(\nu)$ means that no lower- or upper-bound complementarity
+product is allowed to fall below a fixed fraction of that point's average.
 
-Given a search direction
-$\Delta=(\Delta x,\Delta\lambda,\Delta z,\Delta w)$, scaling its primal and dual
-fraction-to-boundary lengths $(\alpha_{\mathrm p},\alpha_{\mathrm d})$
-by a common backtracking factor $\alpha\in[0,1]$ gives the trial
-point $p(\alpha)$ with components
+Now fix the current iterate
+$y_k=(x_k,\lambda_k,z_k,w_k)$ and write $\mu_k=\bar\mu(y_k)$. Given a search
+direction $\Delta=(\Delta x,\Delta\lambda,\Delta z,\Delta w)$, scaling its primal
+and dual fraction-to-boundary lengths $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ by a
+common backtracking factor $\alpha\in[0,1]$ gives the trial point $y_k(\alpha)$ with
+components
 \begin{equation}\label{eq:trial-point}
-    x(\alpha)=x+\alpha\,\alpha_{\mathrm p}\,\Delta x,\qquad
-    (\lambda,z,w)(\alpha)=(\lambda,z,w)+\alpha\,\alpha_{\mathrm d}\,(\Delta\lambda,\Delta z,\Delta w),
+    x_k(\alpha)=x_k+\alpha\,\alpha_{\mathrm p}\,\Delta x,\qquad
+    (\lambda_k,z_k,w_k)(\alpha)
+    =(\lambda_k,z_k,w_k)+\alpha\,\alpha_{\mathrm d}\,(\Delta\lambda,\Delta z,\Delta w),
 \end{equation}
-whose average complementarity is
+and trial complementarity
 \begin{equation}\label{eq:mu-alpha}
-    \mu(\alpha)=\tfrac{1}{2n}\bigl[x(\alpha)^\top z(\alpha)+(\mathbf 1-x(\alpha))^\top w(\alpha)\bigr]
+    \mu_k(\alpha)=\bar\mu\bigl(y_k(\alpha)\bigr)
+    =\tfrac{1}{2n}\bigl[x_k(\alpha)^\top z_k(\alpha)
+      +(\mathbf 1-x_k(\alpha))^\top w_k(\alpha)\bigr].
 \end{equation}
-and satisfies $\mu(0)=\mu$.
+At $\alpha=0$, the trial point is exactly the current iterate, so
+$y_k(0)=y_k$ and $\mu_k(0)=\bar\mu(y_k)=\mu_k$.
 
 The algorithm first tries a \emph{fast step}: use the Mehrotra corrector direction and
 take the largest backtracked $\alpha$ satisfying
 \begin{equation}\label{eq:fast-step}
-    p(\alpha)\in\cN(\nu)\quad\text{and}\quad \mu(\alpha)\le\rho\,\mu(0):
+    y_k(\alpha)\in\cN(\nu)\quad\text{and}\quad \mu_k(\alpha)\le\rho\,\mu_k.
 \end{equation}
 the trial point must remain central and must reduce complementarity by the fixed
 factor $\rho<1$. When the full Mehrotra step satisfies these two tests, the
@@ -585,9 +600,9 @@ $\sigma_{\mathrm s}\in[\underline\sigma,\overline\sigma]\subset(0,1)$ and withou
 second-order Mehrotra correction, then accepts the largest backtracked $\alpha$ such
 that
 \begin{equation}\label{eq:safe-step}
-    p(\alpha)\in\cN(\nu)
+    y_k(\alpha)\in\cN(\nu)
     \quad\text{and}\quad
-    \mu(\alpha)\le\bigl(1-\kappa\,\alpha\,(1-\sigma_{\mathrm s})\bigr)\mu(0).
+    \mu_k(\alpha)\le\bigl(1-\kappa\,\alpha\,(1-\sigma_{\mathrm s})\bigr)\mu_k.
 \end{equation}
 This is an Armijo decrease condition for the complementarity measure. For the
 centred safe direction, the line search accepts a step length bounded away from zero
@@ -649,7 +664,7 @@ a generic conic solver for each OD subproblem.
 \begin{algorithmic}[1]
 \Statex \textbf{Input:} parameters $\theta=(\beta,\gamma)$; OD polytope $\cX_b=\{x\in[0,1]^n:Cx=d\}$; tolerances $\epsilon_{\mathrm{feas}},\epsilon_\mu$.
 \Statex \textbf{Fixed constants:} centrality $\nu$, fast factor $\rho<1$, safe centring interval $[\underline\sigma,\overline\sigma]\subset(0,1)$, Armijo constant $\kappa$, fraction-to-boundary constant $\tau$, backtracking factor $\chi$.
-\Statex \textbf{Notation:} $\textsc{Dir}(q_z,q_w)$ solves~\eqref{eq:ipm-normal} and back-substitutes~\eqref{eq:ipm-backsub}; $p(\alpha)$ and $\mu(\alpha)$ are defined in~\eqref{eq:trial-point}--\eqref{eq:mu-alpha}.
+\Statex \textbf{Notation:} $\textsc{Dir}(q_z,q_w)$ solves~\eqref{eq:ipm-normal} and back-substitutes~\eqref{eq:ipm-backsub}; $y_k(\alpha)$ and $\mu_k(\alpha)$ are defined in~\eqref{eq:trial-point}--\eqref{eq:mu-alpha}.
 \State \textbf{Initialise} at the box centre with zero stationarity residual:
 \Statex \quad $x\gets\tfrac12\mathbf 1$,\ \ $\lambda\gets0$,\ \ $g\gets\ell\odot h'(x;\gamma)-v(\beta)$,\ \ $s\gets1+\tfrac1{10}\|g\|_\infty$,\ \ $z\gets\max(g,0)+s\mathbf 1$,\ \ $w\gets\max(-g,0)+s\mathbf 1$.
 \For{$k=0,1,2,\ldots$}
@@ -664,12 +679,12 @@ a generic conic solver for each OD subproblem.
     \State Compute fraction-to-boundary lengths $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ for $\Delta$ by~\eqref{eq:frac-to-boundary}.
     \State \emph{Fast step:} let $\alpha^\star$ be the first value in $\{1,\chi,\chi^2,\ldots\}$ satisfying~\eqref{eq:fast-step}.
     \If{$\alpha^\star$ exists}
-        \State $(x,\lambda,z,w)\gets p(\alpha^\star)$. \Comment{bare Mehrotra step, taken when admissible}
+        \State $(x,\lambda,z,w)\gets y_k(\alpha^\star)$. \Comment{bare Mehrotra step, taken when admissible}
     \Else
         \State \emph{Safe direction:} $\sigma_{\mathrm s}\gets\min(\overline\sigma,\max(\underline\sigma,\sigma))$ and
         \Statex \quad $\Delta\gets\textsc{Dir}\bigl(\sigma_{\mathrm s}\mu\mathbf 1-x\odot z,\ \sigma_{\mathrm s}\mu\mathbf 1-(\mathbf 1-x)\odot w\bigr)$.
         \State Recompute $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ for this direction and backtrack $\alpha=1,\chi,\chi^2,\ldots$ until~\eqref{eq:safe-step} holds.
-        \State $(x,\lambda,z,w)\gets p(\alpha)$. \Comment{accepted step length is bounded below}
+        \State $(x,\lambda,z,w)\gets y_k(\alpha)$. \Comment{accepted step length is bounded below}
     \EndIf
 \EndFor
 \end{algorithmic}
