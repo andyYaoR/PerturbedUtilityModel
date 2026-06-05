@@ -410,39 +410,6 @@ where $\cX_b = \{x \in [0,1]^n : Cx=d\}$ and
 $F(x;\gamma)=\sum_i \ell_i h(x_i;\gamma)$ is separable. In PURC, $C=A$ is the
 node--link incidence matrix, $d=b$, $n=|\cE|$, and $m=|\cN|$.
 
-\paragraph{Dual recovery.} It is useful to keep the dual representation in
-view, because it explains both the gradient used in the outer loop and the
-recovery of the predicted flow. For a multiplier $\lambda$, define
-\begin{equation}\label{eq:eta-def}
-    \eta_i(\lambda;\beta) := \frac{v_i(\beta) - (C^\top\lambda)_i}{\ell_i}.
-\end{equation}
-The per-coordinate maximizer
-\begin{equation}\label{eq:xistar-def}
-    \xi^*(\eta;\gamma)
-    \in \argmax_{0\le \xi\le 1}\{\eta\xi-h(\xi;\gamma)\}
-\end{equation}
-is unique. For the polynomial kernel~\eqref{eq:h-def}, $h'(0;\gamma)=0$ and
-$h'(1;\gamma)=1+\sum_{l=3}^L\gamma_l$, so
-\[
-    \xi^*(\eta;\gamma)=
-    \begin{cases}
-        0, & \eta\le 0,\\
-        (h')^{-1}(\eta), & 0<\eta<h'(1;\gamma),\\
-        1, & \eta\ge h'(1;\gamma).
-    \end{cases}
-\]
-The inverse is a one-dimensional monotone root. At the dual minimizer
-$\lambda^*_b(\theta)$, the primal solution is recovered as
-$x^*_{i,b}(\theta)=\xi^*(\eta_i(\lambda^*_b;\beta);\gamma)$
-\citep[Theorem~3]{fosgerau_convex_2026}. The dual gradient is the equality
-residual,
-\begin{equation}\label{eq:dual-gradient}
-    \nabla_\lambda \varphi_b(\lambda;\theta)=d-C\hat x(\lambda;\theta),
-\end{equation}
-up to the harmless sign convention for $\lambda$. Thus solving the inner
-problem is equivalent to finding a multiplier whose recovered flow satisfies
-$C\hat x=d$.
-
 \paragraph{Proposed inner solver.} For the polynomial sieve used in this paper,
 $h'$ is finite on the closed interval $[0,1]$. We therefore solve
 \eqref{eq:inner-problem} by a primal--dual interior-point method for the box
@@ -458,8 +425,8 @@ tuning parameters are introduced.
     \ell\odot h'(x;\gamma)-v(\beta)+C^\top\lambda-z+w=0,\qquad
     Cx=d,
 \]
-with multipliers $z,w\ge0$ for the bounds $x\ge0$ and $x\le1$ and
-complementarity $x_i z_i=(1-x_i)w_i=0$. The primal--dual interior-point method
+with multiplier $\lambda$ for the equality $Cx=d$, multipliers $z,w\ge0$ for the
+bounds $x\ge0$ and $x\le1$, and complementarity $x_i z_i=(1-x_i)w_i=0$. The primal--dual interior-point method
 replaces complementarity by
 \begin{equation}\label{eq:kkt}
     x_i z_i=\mu,\qquad (1-x_i)w_i=\mu,\qquad \mu>0.
@@ -511,63 +478,200 @@ back-substitution:
     \Delta z=\frac{q_z-z\odot\Delta x}{x},\qquad
     \Delta w=\frac{q_w+w\odot\Delta x}{\mathbf 1-x}.
 \end{equation}
-The only large linear algebra object in this Newton step is $H_\mu$.
+The only large linear algebra object in this Newton step is $H_\mu$, a weighted
+graph Laplacian with the same sparsity pattern as the network incidence matrix.
 Appendix~\ref{app:ipm-elimination} gives the elimination and back-substitution
-steps.
+steps. It remains to specify the complementarity targets $(q_z,q_w)$ and the step
+length.
 
-\begin{lemma}[Laplacian structure]\label{lem:Hk-PSD}
-For any nonnegative diagonal $W$,
-\[
-    u^\top A W A^\top u = \sum_i W_i\,\bigl((A^\top u)_i\bigr)^2 \ge 0,
-\]
-so $AWA^\top$ is a weighted graph Laplacian. At every interior-point iterate,
-$W=\operatorname{diag}(\Theta)^{-1}$ has strictly positive diagonal entries, so
-$H_\mu$ uses the full network graph with positive link weights.
-\end{lemma}
+\paragraph{Predictor--corrector direction.} Mehrotra's predictor--corrector method
+\citep{mehrotra1992implementation,wright1997primal} uses the current Newton matrix
+twice. The first solve asks how much complementarity could be removed by an
+aggressive affine step. The second solve recentres that step and corrects the
+quadratic error in the products $xz$ and $(1-x)w$. Both solves use the same
+factorization of $H_\mu$; only the right-hand side changes.
 
-Thus each IPM iteration requires solving a weighted graph Laplacian system. The
-network sparsity pattern is fixed; only the link weights change from one
-iteration to the next. This permits reuse of the symbolic structure of the
-linear solver and avoids route enumeration.
-
-\paragraph{Predictor--corrector and step control.} We use Mehrotra's
-predictor--corrector method \citep{mehrotra1992implementation,wright1997primal}.
-The affine predictor sets
-$q_z=-x\odot z$ and $q_w=-(\mathbf 1-x)\odot w$, corresponding to the target
-$\mu=0$. The resulting direction gives an affine complementarity measure
-$\mu_{\mathrm{aff}}$. The corrector then uses
-$\sigma=(\mu_{\mathrm{aff}}/\mu)^3$ and the second-order targets
-\begin{equation}\label{eq:mehrotra-rhs}
-    q_z = \sigma\mu\,\mathbf 1 - x\odot z
-        - \Delta x^{\mathrm{aff}}\!\odot\Delta z^{\mathrm{aff}},
-    \qquad
-    q_w = \sigma\mu\,\mathbf 1 - (\mathbf 1-x)\odot w
-        + \Delta x^{\mathrm{aff}}\!\odot\Delta w^{\mathrm{aff}}.
-\end{equation}
-Both solves use the same matrix $H_\mu$ in the current iteration. The step is
-then damped only to preserve strict positivity:
+For any direction, strict positivity is first protected by the
+\emph{fraction-to-boundary} lengths
 \begin{equation}\label{eq:frac-to-boundary}
 \begin{aligned}
     \alpha_{\mathrm p} &= \min\Bigl(1,\ \tau\!\!\min_{\Delta x_i < 0}\tfrac{-x_i}{\Delta x_i},\ \tau\!\!\min_{\Delta x_i > 0}\tfrac{1 - x_i}{\Delta x_i}\Bigr), \\
     \alpha_{\mathrm d} &= \min\Bigl(1,\ \tau\!\!\min_{\Delta z_i < 0}\tfrac{-z_i}{\Delta z_i},\ \tau\!\!\min_{\Delta w_i < 0}\tfrac{-w_i}{\Delta w_i}\Bigr), \qquad \tau = 0.995,
 \end{aligned}
 \end{equation}
-These choices are fixed across all instances.
+where empty minima are ignored. These are the longest primal and dual moves that
+keep $x\in(0,1)^n$ and $z,w>0$, backed off by the fixed constant $\tau$.
+
+\emph{Predictor.} The affine predictor sets $q_z=-x\odot z$ and
+$q_w=-(\mathbf 1-x)\odot w$, which linearise the complementarity products toward
+$0$. Solving gives the affine direction with components
+$\Delta x^{\mathrm{aff}}$, $\Delta z^{\mathrm{aff}}$, $\Delta w^{\mathrm{aff}}$
+and fraction-to-boundary lengths
+$(\alpha^{\mathrm{aff}}_{\mathrm p},\alpha^{\mathrm{aff}}_{\mathrm d})$
+from~\eqref{eq:frac-to-boundary}. The affine complementarity measure is the
+duality measure of Algorithm~\ref{alg:inner} evaluated at the trial point reached
+along this direction,
+\begin{equation}\label{eq:mu-aff}
+\begin{aligned}
+    \mu_{\mathrm{aff}}=\frac{1}{2n}\Bigl[
+        (x+\alpha^{\mathrm{aff}}_{\mathrm p}\Delta x^{\mathrm{aff}})^\top
+         (z+\alpha^{\mathrm{aff}}_{\mathrm d}\Delta z^{\mathrm{aff}}) + (\mathbf 1-x-\alpha^{\mathrm{aff}}_{\mathrm p}\Delta x^{\mathrm{aff}})^\top
+           (w+\alpha^{\mathrm{aff}}_{\mathrm d}\Delta w^{\mathrm{aff}})\Bigr],
+\end{aligned}
+\end{equation}
+i.e., the complementarity that this aggressive step would actually leave. If
+$\mu_{\mathrm{aff}}$ is small relative to $\mu$, the affine direction already points
+strongly toward the solution and only weak centring is needed. If it is not small,
+the method must recenter more.
+
+\emph{Corrector.} The corrector re-solves, with the same $H_\mu$, using the
+centring parameter $\sigma=(\mu_{\mathrm{aff}}/\mu)^3$ and the second-order targets
+\begin{equation}\label{eq:mehrotra-rhs}
+    q_z = \sigma\mu\,\mathbf 1 - x\odot z
+        - \Delta x^{\mathrm{aff}}\!\odot\Delta z^{\mathrm{aff}},
+    \qquad
+    q_w = \sigma\mu\,\mathbf 1 - (\mathbf 1-x)\odot w
+        + \Delta x^{\mathrm{aff}}\!\odot\Delta w^{\mathrm{aff}},
+\end{equation}
+which yield the corrector direction $\Delta=(\Delta x,\Delta\lambda,\Delta z,\Delta w)$.
+Taking the full fraction-to-boundary step along this direction is the usual Mehrotra
+heuristic. The next paragraph adds the globalization that turns this heuristic into a
+robust algorithm.
+
+\paragraph{Globalization and convergence.} Fraction-to-boundary controls only
+positivity. It does not prevent one complementarity product from becoming tiny while
+other products remain large. Such an unbalanced point can be positive but far from
+the central path, and bare Mehrotra predictor--corrector methods are not globally
+convergent in general \citep{salahi2007mehrotra}. We therefore use the
+safe-step/fast-step globalization of \citet{wright1996superlinear,ralph2000superlinear},
+within the framework of \citet{kojima1994global}.
+
+The globalization keeps every trial point in the wide central neighbourhood
+\begin{equation}\label{eq:nbhd}
+    \cN(\nu)=\bigl\{(x,\lambda,z,w):0<x<\mathbf 1,\ z,w>0,\
+        \min_i\bigl(x_iz_i,\ (1-x_i)w_i\bigr)\ge\nu\,\mu\bigr\}.
+\end{equation}
+Here $\mu=\{x^\top z+(\mathbf 1-x)^\top w\}/(2n)$ is evaluated at the same point, and
+$\nu\in(0,1)$ is a fixed centrality constant, unrelated to the sieve coefficients
+$\gamma$. Membership in $\cN(\nu)$ means that no lower- or upper-bound
+complementarity product is allowed to fall below a fixed fraction of the average.
+
+Given a search direction
+$\Delta=(\Delta x,\Delta\lambda,\Delta z,\Delta w)$, scaling its primal and dual
+fraction-to-boundary lengths $(\alpha_{\mathrm p},\alpha_{\mathrm d})$
+by a common backtracking factor $\alpha\in[0,1]$ gives the trial
+point $p(\alpha)$ with components
+\begin{equation}\label{eq:trial-point}
+    x(\alpha)=x+\alpha\,\alpha_{\mathrm p}\,\Delta x,\qquad
+    (\lambda,z,w)(\alpha)=(\lambda,z,w)+\alpha\,\alpha_{\mathrm d}\,(\Delta\lambda,\Delta z,\Delta w),
+\end{equation}
+whose average complementarity is
+\begin{equation}\label{eq:mu-alpha}
+    \mu(\alpha)=\tfrac{1}{2n}\bigl[x(\alpha)^\top z(\alpha)+(\mathbf 1-x(\alpha))^\top w(\alpha)\bigr]
+\end{equation}
+and satisfies $\mu(0)=\mu$.
+
+The algorithm first tries a \emph{fast step}: use the Mehrotra corrector direction and
+take the largest backtracked $\alpha$ satisfying
+\begin{equation}\label{eq:fast-step}
+    p(\alpha)\in\cN(\nu)\quad\text{and}\quad \mu(\alpha)\le\rho\,\mu(0):
+\end{equation}
+the trial point must remain central and must reduce complementarity by the fixed
+factor $\rho<1$. When the full Mehrotra step satisfies these two tests, the
+globalization does nothing. When it does not, the algorithm switches to a
+\emph{safe step}. The safe step recomputes the Newton direction with a bounded
+centring parameter
+$\sigma_{\mathrm s}\in[\underline\sigma,\overline\sigma]\subset(0,1)$ and without the
+second-order Mehrotra correction, then accepts the largest backtracked $\alpha$ such
+that
+\begin{equation}\label{eq:safe-step}
+    p(\alpha)\in\cN(\nu)
+    \quad\text{and}\quad
+    \mu(\alpha)\le\bigl(1-\kappa\,\alpha\,(1-\sigma_{\mathrm s})\bigr)\mu(0).
+\end{equation}
+This is an Armijo decrease condition for the complementarity measure. For the
+centred safe direction, the line search accepts a step length bounded away from zero
+\citep[Lemma~3.1]{wright1996superlinear}. Hence fallback to a safe step is not a
+patch: it is the part of the method that supplies global progress.
+
+The initialization is also chosen to avoid hand tuning. We set
+$x=\tfrac12\mathbf 1$ and $\lambda=0$. Then, with
+$g=\ell\odot h'(\tfrac12\mathbf 1;\gamma)-v(\beta)$, we choose
+$z=\max(g,0)+s\mathbf 1$ and $w=\max(-g,0)+s\mathbf 1$ for a positive common shift
+$s$. This makes $z-w=g$, so the stationarity residual at the box centre is zero while
+$z,w$ remain strictly positive. The constants in the line searches are fixed across
+all instances.
+
+\begin{proposition}[Global convergence]\label{prop:ipm}
+Fix $\theta=(\beta,\gamma)$ with $\gamma\in\Gamma$, and suppose the OD polytope
+$\cX_b$ contains a strictly interior flow ($0<x<\mathbf 1$, $Cx=d$). Then
+\textup{(i)} the inner minimiser $x^*_b(\theta)$ of~\eqref{eq:inner-problem} is
+unique; \textup{(ii)} the Newton system~\eqref{eq:ipm-normal} is nonsingular at every
+strictly interior iterate after the incidence matrix is grounded; \textup{(iii)} the
+safe-step line search in~\eqref{eq:safe-step} accepts a step length bounded away from
+$0$; and \textup{(iv)} every limit point of the safeguarded iterates is a
+primal--dual optimum of~\eqref{eq:inner-problem}, with primal part
+$x^*_b(\theta)$. If the solution is strictly complementary, the local rate is
+superlinear.
+\end{proposition}
+
+\begin{proof}
+By the specification of $\Gamma$, $h''(\cdot;\gamma)>0$ on $(0,1)$, so
+$F(\cdot;\gamma)=\sum_i\ell_i h(\cdot;\gamma)$ is strictly convex; minimised over the
+compact polytope $\cX_b$ this gives the unique $x^*_b(\theta)$ of~\textup{(i)}, and
+the KKT map of~\eqref{eq:inner-problem} is monotone. For~\textup{(ii)}, at any
+strictly interior iterate the curvature
+$\Theta_i=\ell_i h''(x_i;\gamma)+z_i/x_i+w_i/(1-x_i)$ is strictly positive, so
+$H_\mu=C\operatorname{diag}(\Theta)^{-1}C^\top$ is positive semidefinite, and positive
+definite once the per-component constant nullspace of $C=A$ is grounded; grounding
+fixes the multiplier gauge but does not change $x^*_b$. Thus
+\eqref{eq:ipm-normal} has a unique grounded solution. This positive definiteness is
+the invertibility condition required by the Ralph--Wright theory, and here it follows
+from strict convexity. Monotonicity and this invertibility imply existence of a
+nonvanishing safe-step length \citep[Lemma~3.1]{wright1996superlinear}, giving
+\textup{(iii)}. Slater feasibility keeps the iterates bounded, and the global
+convergence theorem for the safe-step/fast-step interior method
+\citep[Theorem~1]{ralph2000superlinear} gives~\textup{(iv)}. The superlinear
+statement is \citet[Theorem~2]{ralph2000superlinear}; importantly, that result does
+not require the active-constraint Jacobian to have full rank, which is useful here
+because incidence matrices are rank deficient.
+\end{proof}
+
+The result is meant as a convergence statement, not as a tuning recipe. The constants
+in Algorithm~\ref{alg:inner} are held fixed across instances. Empirically, the safe
+step is rarely used: it is a guardrail for difficult iterations, while easy iterations
+take the fast Mehrotra step. Since each iteration is dominated by weighted-Laplacian
+linear solves, the method exploits the network structure directly rather than calling
+a generic conic solver for each OD subproblem.
 
 \begin{algorithm}[ht]
 \caption{Inner solver for the PURC subproblem~\eqref{eq:inner-problem}}\label{alg:inner}
 \begin{algorithmic}[1]
-\State \textbf{Input:} parameters $\theta=(\beta,\gamma)$ and OD polytope $\cX_b=\{x\in[0,1]^n:Cx=d\}$.
-\State \textbf{Initialise} $x\gets \tfrac12\mathbf 1$, $z\gets\mathbf 1$, $w\gets\mathbf 1$, $\lambda\gets0$.
-\For{$k = 0, 1, 2, \ldots$}
-    \State Compute $r_{\mathrm d}$, $r_{\mathrm p}$, and $\mu=\{x^\top z+(\mathbf 1-x)^\top w\}/(2n)$.
-    \If{$\|(r_{\mathrm d},r_{\mathrm p})\|_\infty$ and $\mu$ are below the inner tolerances} \textbf{break} \EndIf
-    \State Form $\Theta_i=\ell_i h''(x_i;\gamma)+z_i/x_i+w_i/(1-x_i)$ and the Laplacian $H_\mu=C\operatorname{diag}(\Theta)^{-1}C^\top$.
-    \State Compute the affine predictor direction using $q_z=-x\odot z$ and $q_w=-(\mathbf 1-x)\odot w$.
-    \State Compute $\mu_{\mathrm{aff}}$, set $\sigma=(\mu_{\mathrm{aff}}/\mu)^3$, and compute the corrector direction using~\eqref{eq:mehrotra-rhs}.
-    \State Take the fraction-to-boundary step~\eqref{eq:frac-to-boundary}.
+\Statex \textbf{Input:} parameters $\theta=(\beta,\gamma)$; OD polytope $\cX_b=\{x\in[0,1]^n:Cx=d\}$; tolerances $\epsilon_{\mathrm{feas}},\epsilon_\mu$.
+\Statex \textbf{Fixed constants:} centrality $\nu$, fast factor $\rho<1$, safe centring interval $[\underline\sigma,\overline\sigma]\subset(0,1)$, Armijo constant $\kappa$, fraction-to-boundary constant $\tau$, backtracking factor $\chi$.
+\Statex \textbf{Notation:} $\textsc{Dir}(q_z,q_w)$ solves~\eqref{eq:ipm-normal} and back-substitutes~\eqref{eq:ipm-backsub}; $p(\alpha)$ and $\mu(\alpha)$ are defined in~\eqref{eq:trial-point}--\eqref{eq:mu-alpha}.
+\State \textbf{Initialise} at the box centre with zero stationarity residual:
+\Statex \quad $x\gets\tfrac12\mathbf 1$,\ \ $\lambda\gets0$,\ \ $g\gets\ell\odot h'(x;\gamma)-v(\beta)$,\ \ $s\gets1+\tfrac1{10}\|g\|_\infty$,\ \ $z\gets\max(g,0)+s\mathbf 1$,\ \ $w\gets\max(-g,0)+s\mathbf 1$.
+\For{$k=0,1,2,\ldots$}
+    \State $r_{\mathrm d}\gets\ell\odot h'(x;\gamma)-v(\beta)+C^\top\lambda-z+w$,\ \ $r_{\mathrm p}\gets Cx-d$,\ \ $\mu\gets\tfrac1{2n}\bigl[x^\top z+(\mathbf 1-x)^\top w\bigr]$.
+    \If{$\|(r_{\mathrm d},r_{\mathrm p})\|_\infty\le\epsilon_{\mathrm{feas}}$ \textbf{and} $\mu\le\epsilon_\mu$}
+        \State \textbf{return} $(\lambda,x)$ as $(\lambda_b^*(\theta),x_b^*(\theta))$.
+    \EndIf
+    \State $\Theta_i\gets\ell_i h''(x_i;\gamma)+z_i/x_i+w_i/(1-x_i)$; factorize $H_\mu\gets C\operatorname{diag}(\Theta)^{-1}C^\top$.
+    \State \emph{Predictor:} $\Delta^{\mathrm{aff}}\gets\textsc{Dir}\bigl(-x\odot z,\,-(\mathbf 1-x)\odot w\bigr)$; compute $\mu_{\mathrm{aff}}$ by~\eqref{eq:mu-aff}.
+    \State Set $\sigma\gets(\mu_{\mathrm{aff}}/\mu)^3$.
+    \State \emph{Corrector:} $\Delta\gets\textsc{Dir}(q_z,q_w)$ with $q_z,q_w$ from~\eqref{eq:mehrotra-rhs}.
+    \State Compute fraction-to-boundary lengths $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ for $\Delta$ by~\eqref{eq:frac-to-boundary}.
+    \State \emph{Fast step:} let $\alpha^\star$ be the first value in $\{1,\chi,\chi^2,\ldots\}$ satisfying~\eqref{eq:fast-step}.
+    \If{$\alpha^\star$ exists}
+        \State $(x,\lambda,z,w)\gets p(\alpha^\star)$. \Comment{bare Mehrotra step, taken when admissible}
+    \Else
+        \State \emph{Safe direction:} $\sigma_{\mathrm s}\gets\min(\overline\sigma,\max(\underline\sigma,\sigma))$ and
+        \Statex \quad $\Delta\gets\textsc{Dir}\bigl(\sigma_{\mathrm s}\mu\mathbf 1-x\odot z,\ \sigma_{\mathrm s}\mu\mathbf 1-(\mathbf 1-x)\odot w\bigr)$.
+        \State Recompute $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ for this direction and backtrack $\alpha=1,\chi,\chi^2,\ldots$ until~\eqref{eq:safe-step} holds.
+        \State $(x,\lambda,z,w)\gets p(\alpha)$. \Comment{accepted step length is bounded below}
+    \EndIf
 \EndFor
-\State \textbf{return} $(\lambda_b^*(\theta),\,x_b^*(\theta))$.
 \end{algorithmic}
 \end{algorithm}
 
@@ -598,9 +702,9 @@ where $\alpha_k$ is selected by Armijo backtracking, and the projection is the i
 \State Initialise $\theta_0$.
 \For{$k = 0, 1, 2, \ldots$}
     \For{$b = 1, \ldots, B$ (parallel over OD pairs)}
-        \State $(\lambda^*_b(\theta_k),\, \hat{x}_b(\theta_k)) \gets$ Algorithm~\ref{alg:inner} at $\theta_k$.
+        \State $(\lambda^*_b(\theta_k),\, x^*_b(\theta_k)) \gets$ Algorithm~\ref{alg:inner} at $\theta_k$.
     \EndFor
-    \State Assemble $g_k = \nabla Q_B(\theta_k)$ from~\eqref{eq:outer-gradient} using $\{\hat{x}_b(\theta_k)\}_b$.
+    \State Assemble $g_k = \nabla Q_B(\theta_k)$ from~\eqref{eq:outer-gradient} using $\{x^*_b(\theta_k)\}_b$.
     \If{$\|g_k\| < \varepsilon$} \textbf{break} \EndIf
     \State $\alpha_k \gets$ Armijo backtracking on $\alpha \mapsto Q_B\bigl(\mathrm{proj}_{\mathbb{R}^K \times \Gamma_B}(\theta_k - \alpha g_k)\bigr)$, starting from $\alpha_0$.
     \State $\theta_{k+1} \gets \mathrm{proj}_{\mathbb{R}^K \times \Gamma_B}(\theta_k - \alpha_k g_k)$.
