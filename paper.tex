@@ -412,7 +412,7 @@ node--link incidence matrix, $d=b$, $n=|\cE|$, and $m=|\cN|$.
 
 \paragraph{Dual recovery.} It is useful to keep the dual representation in
 view, because it explains both the gradient used in the outer loop and the
-active-set structure at the optimum. For a multiplier $\lambda$, define
+recovery of the predicted flow. For a multiplier $\lambda$, define
 \begin{equation}\label{eq:eta-def}
     \eta_i(\lambda;\beta) := \frac{v_i(\beta) - (C^\top\lambda)_i}{\ell_i}.
 \end{equation}
@@ -443,29 +443,14 @@ up to the harmless sign convention for $\lambda$. Thus solving the inner
 problem is equivalent to finding a multiplier whose recovered flow satisfies
 $C\hat x=d$.
 
-\paragraph{Why a pure active-set Newton method is not enough.} The dual objective
-is convex and smooth as long as no recovered coordinate is at a bound. At a
-saturated coordinate, however, the derivative of $\xi^*$ is zero and the
-corresponding curvature weight disappears. A semismooth Newton method therefore
-uses a matrix of the form $C\operatorname{diag}(D)C^\top$, with
-$D_i=1/(\ell_i h''(x_i;\gamma))$ on links satisfying $0<x_i<1$ and $D_i=0$ at
-the bounds. This is fast once the correct active set is known. On large cold
-starts, especially for sparse polynomial PURC solutions, the active set can be
-wrong for many iterations. We therefore use an interior method to reach a
-well-centered point near the solution before switching to the exact active-set
-solver.
-
-\paragraph{Solver regime.} For the polynomial sieve used in this paper,
-$h'$ is finite on the closed interval $[0,1]$. The inner solver is therefore a
-primal--dual interior-point method for the box constraints, followed by a
-semismooth Newton crossover that removes the remaining barrier bias. This is the
-default route for smooth-on-the-box perturbations such as the quadratic and the
-polynomial sieve. For perturbations whose derivative diverges at a box face
-(for example entropy kernels), a primal barrier at that face is ill posed; those
-cases are solved directly in the dual, with a barrier-smoothed dual continuation
-available as a robust fallback. The paper's estimator only needs the polynomial
-sieve case, but the implementation uses this regime rule so that the same
-software handles several perturbation families without hand tuning.
+\paragraph{Proposed inner solver.} For the polynomial sieve used in this paper,
+$h'$ is finite on the closed interval $[0,1]$. We therefore solve
+\eqref{eq:inner-problem} by a primal--dual interior-point method for the box
+constraints. The method keeps every iterate strictly inside the box, follows the
+central path of a sequence of smooth barrier problems, and computes each Newton
+direction by one weighted graph Laplacian solve. This is the complete inner
+solver used by the estimator: no routes are enumerated, and no instance-specific
+tuning parameters are introduced.
 
 \paragraph{Primal--dual central path.} The KKT conditions for
 \eqref{eq:inner-problem} are
@@ -541,10 +526,7 @@ For any nonnegative diagonal $W$,
 \]
 so $AWA^\top$ is a weighted graph Laplacian. At every interior-point iterate,
 $W=\operatorname{diag}(\Theta)^{-1}$ has strictly positive diagonal entries, so
-$H_\mu$ uses the full network graph. Near the solution, links that saturate have
-vanishing weights, while links with $0<x_i^*<1$ retain the curvature weights
-$1/(\ell_i h''(x_i^*;\gamma))$. Under Assumption~\ref{ass:neg_utility}, the
-positive-flow active subgraph is acyclic.
+$H_\mu$ uses the full network graph with positive link weights.
 \end{lemma}
 
 Thus each IPM iteration requires solving a weighted graph Laplacian system. The
@@ -576,15 +558,6 @@ then damped only to preserve strict positivity:
 \end{equation}
 These choices are fixed across all instances.
 
-\paragraph{Crossover to the exact box solution.} The interior-point iterate is
-strictly interior, whereas the PURC solution is often sparse. We therefore use
-the IPM only to obtain a reliable multiplier near the solution. Once primal and
-dual residuals and complementarity are small, we pass $\lambda$ to the exact
-semismooth Newton solver for the original box problem. This crossover removes
-the barrier approximation and identifies the final active set
-$S_b^*(\theta)=\{i:0<x^*_{i,b}(\theta)<1\}$. In practice this also recovers the
-sparser active-subgraph Laplacian near the optimum.
-
 \begin{algorithm}[ht]
 \caption{Inner solver for the PURC subproblem~\eqref{eq:inner-problem}}\label{alg:inner}
 \begin{algorithmic}[1]
@@ -592,14 +565,13 @@ sparser active-subgraph Laplacian near the optimum.
 \State \textbf{Initialise} $x\gets \tfrac12\mathbf 1$, $z\gets\mathbf 1$, $w\gets\mathbf 1$, $\lambda\gets0$.
 \For{$k = 0, 1, 2, \ldots$}
     \State Compute $r_{\mathrm d}$, $r_{\mathrm p}$, and $\mu=\{x^\top z+(\mathbf 1-x)^\top w\}/(2n)$.
-    \If{$\|(r_{\mathrm d},r_{\mathrm p})\|_\infty$ and $\mu$ are below the crossover tolerances} \textbf{break} \EndIf
+    \If{$\|(r_{\mathrm d},r_{\mathrm p})\|_\infty$ and $\mu$ are below the inner tolerances} \textbf{break} \EndIf
     \State Form $\Theta_i=\ell_i h''(x_i;\gamma)+z_i/x_i+w_i/(1-x_i)$ and the Laplacian $H_\mu=C\operatorname{diag}(\Theta)^{-1}C^\top$.
     \State Compute the affine predictor direction using $q_z=-x\odot z$ and $q_w=-(\mathbf 1-x)\odot w$.
     \State Compute $\mu_{\mathrm{aff}}$, set $\sigma=(\mu_{\mathrm{aff}}/\mu)^3$, and compute the corrector direction using~\eqref{eq:mehrotra-rhs}.
     \State Take the fraction-to-boundary step~\eqref{eq:frac-to-boundary}.
 \EndFor
-\State Run semismooth Newton on the original box problem, warm-started at $\lambda$.
-\State \textbf{return} $(\lambda_b^*(\theta),\,x_b^*(\theta),\,S_b^*(\theta))$.
+\State \textbf{return} $(\lambda_b^*(\theta),\,x_b^*(\theta))$.
 \end{algorithmic}
 \end{algorithm}
 
@@ -630,7 +602,7 @@ where $\alpha_k$ is selected by Armijo backtracking, and the projection is the i
 \State Initialise $\theta_0$.
 \For{$k = 0, 1, 2, \ldots$}
     \For{$b = 1, \ldots, B$ (parallel over OD pairs)}
-        \State $(\lambda^*_b(\theta_k),\, \hat{x}_b(\theta_k),\, \mathcal{S}_b) \gets$ Algorithm~\ref{alg:inner} at $\theta_k$.
+        \State $(\lambda^*_b(\theta_k),\, \hat{x}_b(\theta_k)) \gets$ Algorithm~\ref{alg:inner} at $\theta_k$.
     \EndFor
     \State Assemble $g_k = \nabla Q_B(\theta_k)$ from~\eqref{eq:outer-gradient} using $\{\hat{x}_b(\theta_k)\}_b$.
     \If{$\|g_k\| < \varepsilon$} \textbf{break} \EndIf
