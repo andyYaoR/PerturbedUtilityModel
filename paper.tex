@@ -410,42 +410,37 @@ where $\cX_b = \{x \in [0,1]^n : Cx=d\}$ and
 $F(x;\gamma)=\sum_i \ell_i h(x_i;\gamma)$ is separable. In PURC, $C=A$ is the
 node--link incidence matrix, $d=b$, $n=|\cE|$, and $m=|\cN|$.
 
-\paragraph{Proposed inner solver.} For the polynomial sieve used in this paper,
-$h'$ is finite on the closed interval $[0,1]$. We therefore solve
-\eqref{eq:inner-problem} by a primal--dual interior-point method for the box
-constraints. The method keeps every iterate strictly inside the box, follows the
-central path defined by perturbed complementarity, and computes each Newton
-direction by one weighted graph Laplacian solve. This is the complete inner
-solver used by the estimator: no routes are enumerated, and no instance-specific
-tuning parameters are introduced.
+\paragraph{Proposed inner solver.} For the polynomial sieve, $h'$ is finite on
+$[0,1]$, so the box constraints can be handled directly. We solve
+\eqref{eq:inner-problem} with a primal--dual interior-point method. The solver keeps
+$0<x<\mathbf 1$ and $z,w>0$, computes Newton directions through a weighted graph
+Laplacian, and uses a safe-step/fast-step line search to globalize Mehrotra's
+predictor--corrector step. No routes are enumerated, and the algorithmic constants
+are fixed across instances.
 
-\paragraph{Primal--dual central path.} The KKT conditions for
-\eqref{eq:inner-problem} are
+The KKT conditions are
 \[
     \ell\odot h'(x;\gamma)-v(\beta)+C^\top\lambda-z+w=0,\qquad
     Cx=d,
 \]
 with multiplier $\lambda$ for the equality $Cx=d$, multipliers $z,w\ge0$ for the
-bounds $x\ge0$ and $x\le1$, and complementarity $x_i z_i=(1-x_i)w_i=0$. The primal--dual interior-point method
-replaces complementarity by
+bounds $x\ge0$ and $x\le1$, and complementarity $x_i z_i=(1-x_i)w_i=0$. The
+interior method replaces exact complementarity by
 \begin{equation}\label{eq:kkt}
     x_i z_i=\mu,\qquad (1-x_i)w_i=\mu,\qquad \mu>0.
 \end{equation}
-For fixed $\mu>0$, these equations keep the iterate strictly inside the box:
-$0<x_i<1$ and $z_i,w_i>0$.
-As $\mu\downarrow0$, the central path approaches the solution of the original
-box-constrained problem.
+Thus, for $\mu>0$, both the primal variables and bound multipliers stay strictly
+positive; as $\mu\downarrow0$, the perturbed system approaches the original KKT
+system.
 
-\paragraph{Newton system.} At a strictly interior iterate
-$(x,\lambda,z,w)$, define
+\paragraph{Newton solve.} At a strictly interior iterate $(x,\lambda,z,w)$, define
 \[
     r_{\mathrm d}=\ell\odot h'(x;\gamma)-v(\beta)+C^\top\lambda-z+w,
     \qquad
     r_{\mathrm p}=Cx-d.
 \]
-Let $q_z$ and $q_w$ denote the right-hand sides chosen for the two
-complementarity equations. Linearizing stationarity, feasibility, and
-complementarity gives
+Let $(q_z,q_w)$ be the desired linearized changes in the two complementarity
+products. Linearization gives
 \begin{equation}\label{eq:newton-system}
 \begin{aligned}
     \operatorname{diag}(\ell\odot h''(x;\gamma))\Delta x
@@ -455,8 +450,8 @@ complementarity gives
     -w\odot\Delta x+(\mathbf 1-x)\odot\Delta w &= q_w.
 \end{aligned}
 \end{equation}
-Eliminating $\Delta z$, $\Delta w$, and $\Delta x$ gives one symmetric system
-for $\Delta\lambda$:
+Eliminating $\Delta z$, $\Delta w$, and $\Delta x$ reduces this system to one
+equation for $\Delta\lambda$:
 \begin{equation}\label{eq:ipm-normal}
     H_\mu\Delta\lambda
     = r_{\mathrm p}
@@ -471,25 +466,21 @@ where
     \qquad
     s=-r_{\mathrm d}+\frac{q_z}{x}-\frac{q_w}{\mathbf 1-x}.
 \]
-After solving~\eqref{eq:ipm-normal}, the remaining directions are obtained by
-back-substitution:
+The remaining directions are then recovered by back-substitution:
 \begin{equation}\label{eq:ipm-backsub}
     \Delta x=\operatorname{diag}(\Theta)^{-1}(s-C^\top\Delta\lambda),\qquad
     \Delta z=\frac{q_z-z\odot\Delta x}{x},\qquad
     \Delta w=\frac{q_w+w\odot\Delta x}{\mathbf 1-x}.
 \end{equation}
-The only large linear algebra object in this Newton step is $H_\mu$, a weighted
-graph Laplacian with the same sparsity pattern as the network incidence matrix.
-Appendix~\ref{app:ipm-elimination} gives the elimination and back-substitution
-steps. It remains to specify the complementarity targets $(q_z,q_w)$ and the step
-length.
+Here $H_\mu$ is a weighted graph Laplacian with the same sparsity pattern as the
+network incidence matrix. Appendix~\ref{app:ipm-elimination} gives the algebra.
+The remaining choices are the targets $(q_z,q_w)$ and the step length.
 
-\paragraph{Predictor--corrector direction.} Mehrotra's predictor--corrector method
-\citep{mehrotra1992implementation,wright1997primal} uses the current Newton matrix
-twice. The first solve asks how much complementarity could be removed by an
-aggressive affine step. The second solve recentres that step and corrects the
-quadratic error in the products $xz$ and $(1-x)w$. Both solves use the same
-factorization of $H_\mu$; only the right-hand side changes.
+\paragraph{Predictor--corrector direction.} Mehrotra's method
+\citep{mehrotra1992implementation,wright1997primal} chooses $(q_z,q_w)$ with two
+right-hand sides and one factorization of $H_\mu$. The affine predictor sets
+$q_z=-x\odot z$ and $q_w=-(\mathbf 1-x)\odot w$, asking how much complementarity
+would remain if the linearized products were driven toward zero.
 
 For any direction, strict positivity is first protected by the
 \emph{fraction-to-boundary} lengths
@@ -502,15 +493,10 @@ For any direction, strict positivity is first protected by the
 where empty minima are ignored. These are the longest primal and dual moves that
 keep $x\in(0,1)^n$ and $z,w>0$, backed off by the fixed constant $\tau$.
 
-\emph{Predictor.} The affine predictor sets $q_z=-x\odot z$ and
-$q_w=-(\mathbf 1-x)\odot w$, which linearise the complementarity products toward
-$0$. Solving gives the affine direction with components
-$\Delta x^{\mathrm{aff}}$, $\Delta z^{\mathrm{aff}}$, $\Delta w^{\mathrm{aff}}$
-and fraction-to-boundary lengths
-$(\alpha^{\mathrm{aff}}_{\mathrm p},\alpha^{\mathrm{aff}}_{\mathrm d})$
-from~\eqref{eq:frac-to-boundary}. The affine complementarity measure is the
-duality measure of Algorithm~\ref{alg:inner} evaluated at the trial point reached
-along this direction,
+Let $(\Delta x^{\mathrm{aff}},\Delta\lambda^{\mathrm{aff}},
+\Delta z^{\mathrm{aff}},\Delta w^{\mathrm{aff}})$ be the affine direction, and let
+$(\alpha^{\mathrm{aff}}_{\mathrm p},\alpha^{\mathrm{aff}}_{\mathrm d})$ be its
+fraction-to-boundary lengths. The affine complementarity is
 \begin{equation}\label{eq:mu-aff}
 \begin{aligned}
     \mu_{\mathrm{aff}}=\frac{1}{2n}\Bigl[
@@ -519,13 +505,12 @@ along this direction,
            (w+\alpha^{\mathrm{aff}}_{\mathrm d}\Delta w^{\mathrm{aff}})\Bigr],
 \end{aligned}
 \end{equation}
-i.e., the complementarity that this aggressive step would actually leave. If
-$\mu_{\mathrm{aff}}$ is small relative to $\mu$, the affine direction already points
-strongly toward the solution and only weak centring is needed. If it is not small,
-the method must recenter more.
+the average complementarity after the largest admissible affine move.
 
-\emph{Corrector.} The corrector re-solves, with the same $H_\mu$, using the
-centring parameter $\sigma=(\mu_{\mathrm{aff}}/\mu)^3$ and the second-order targets
+The corrector uses
+$\sigma=(\mu_{\mathrm{aff}}/\mu)^3$. When the affine step is effective, $\sigma$ is
+small and the method follows it aggressively; otherwise $\sigma$ increases
+centring. The corrected targets are
 \begin{equation}\label{eq:mehrotra-rhs}
     q_z = \sigma\mu\,\mathbf 1 - x\odot z
         - \Delta x^{\mathrm{aff}}\!\odot\Delta z^{\mathrm{aff}},
@@ -534,88 +519,73 @@ centring parameter $\sigma=(\mu_{\mathrm{aff}}/\mu)^3$ and the second-order targ
         + \Delta x^{\mathrm{aff}}\!\odot\Delta w^{\mathrm{aff}},
 \end{equation}
 which yield the corrector direction $\Delta=(\Delta x,\Delta\lambda,\Delta z,\Delta w)$.
-Taking the full fraction-to-boundary step along this direction is the usual Mehrotra
-heuristic. The next paragraph adds the globalization that turns this heuristic into a
-robust algorithm.
+Taking the full fraction-to-boundary step along $\Delta$ is the bare Mehrotra
+heuristic. The safeguard below decides whether that step is acceptable.
 
 \paragraph{Globalization and convergence.} Fraction-to-boundary controls only
 positivity. It does not prevent one complementarity product from becoming tiny while
-other products remain large. Such an unbalanced point can be positive but far from
-the central path, and bare Mehrotra predictor--corrector methods are not globally
-convergent in general \citep{salahi2007mehrotra}. We therefore use the
+other products remain large. Bare Mehrotra predictor--corrector methods are
+therefore not globally convergent in general \citep{salahi2007mehrotra}. We use the
 safe-step/fast-step globalization of \citet{wright1996superlinear,ralph2000superlinear},
 within the framework of \citet{kojima1994global}.
 
-The globalization keeps every trial point in the wide central neighbourhood. To
-avoid overloading notation, define the average complementarity of any strictly
-interior point $y=(x,\lambda,z,w)$ by
+For any strictly interior point $y=(x,\lambda,z,w)$, define its average
+complementarity by
 \begin{equation}\label{eq:mu-bar}
     \bar\mu(y)
     :=\bar\mu(x,z,w)
     =\frac{x^\top z+(\mathbf 1-x)^\top w}{2n}.
 \end{equation}
-The neighbourhood is then the set of points whose \emph{own} complementarity
-products are not too uneven:
+The wide central neighbourhood is
 \begin{equation}\label{eq:nbhd}
     \cN(\nu)=\bigl\{y=(x,\lambda,z,w):0<x<\mathbf 1,\ z,w>0,\
         \min_i\bigl(x_iz_i,\ (1-x_i)w_i\bigr)\ge\nu\,\bar\mu(y)\bigr\}.
 \end{equation}
-The multiplier $\lambda$ appears in $y$ because it is part of the primal--dual
-iterate, but centrality itself depends only on $(x,z,w)$. The constant
-$\nu\in(0,1)$ is fixed and is unrelated to the sieve coefficients $\gamma$.
-Membership in $\cN(\nu)$ means that no lower- or upper-bound complementarity
-product is allowed to fall below a fixed fraction of that point's average.
+The average in~\eqref{eq:nbhd} is evaluated at the same point $y$. Thus membership
+means that no lower- or upper-bound product is too small relative to that point's
+own average. The multiplier $\lambda$ is included in $y$ because it is part of the
+iterate, but centrality depends only on $(x,z,w)$.
 
 Now fix the current iterate
 $y_k=(x_k,\lambda_k,z_k,w_k)$ and write $\mu_k=\bar\mu(y_k)$. Given a search
-direction $\Delta=(\Delta x,\Delta\lambda,\Delta z,\Delta w)$, scaling its primal
-and dual fraction-to-boundary lengths $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ by a
-common backtracking factor $\alpha\in[0,1]$ gives the trial point $y_k(\alpha)$ with
-components
+direction $\Delta$, scale its primal and dual fraction-to-boundary lengths by a
+common backtracking factor $\alpha\in[0,1]$:
 \begin{equation}\label{eq:trial-point}
     x_k(\alpha)=x_k+\alpha\,\alpha_{\mathrm p}\,\Delta x,\qquad
     (\lambda_k,z_k,w_k)(\alpha)
     =(\lambda_k,z_k,w_k)+\alpha\,\alpha_{\mathrm d}\,(\Delta\lambda,\Delta z,\Delta w),
 \end{equation}
-and trial complementarity
+with trial complementarity
 \begin{equation}\label{eq:mu-alpha}
     \mu_k(\alpha)=\bar\mu\bigl(y_k(\alpha)\bigr)
     =\tfrac{1}{2n}\bigl[x_k(\alpha)^\top z_k(\alpha)
       +(\mathbf 1-x_k(\alpha))^\top w_k(\alpha)\bigr].
 \end{equation}
-At $\alpha=0$, the trial point is exactly the current iterate, so
-$y_k(0)=y_k$ and $\mu_k(0)=\bar\mu(y_k)=\mu_k$.
+Because $y_k(0)=y_k$, we have $\mu_k(0)=\mu_k$.
 
-The algorithm first tries a \emph{fast step}: use the Mehrotra corrector direction and
-take the largest backtracked $\alpha$ satisfying
+The line search first tries a \emph{fast step}: use the Mehrotra corrector direction
+and take the largest backtracked $\alpha$ satisfying
 \begin{equation}\label{eq:fast-step}
     y_k(\alpha)\in\cN(\nu)\quad\text{and}\quad \mu_k(\alpha)\le\rho\,\mu_k.
 \end{equation}
-the trial point must remain central and must reduce complementarity by the fixed
-factor $\rho<1$. When the full Mehrotra step satisfies these two tests, the
-globalization does nothing. When it does not, the algorithm switches to a
-\emph{safe step}. The safe step recomputes the Newton direction with a bounded
-centring parameter
-$\sigma_{\mathrm s}\in[\underline\sigma,\overline\sigma]\subset(0,1)$ and without the
-second-order Mehrotra correction, then accepts the largest backtracked $\alpha$ such
-that
+If the full Mehrotra step satisfies~\eqref{eq:fast-step}, the safeguard is
+transparent. If no fast step is accepted, we recompute a centred safe direction with
+$\sigma_{\mathrm s}\in[\underline\sigma,\overline\sigma]\subset(0,1)$ and no
+second-order correction. The accepted safe step is the largest backtracked $\alpha$
+satisfying
 \begin{equation}\label{eq:safe-step}
     y_k(\alpha)\in\cN(\nu)
     \quad\text{and}\quad
     \mu_k(\alpha)\le\bigl(1-\kappa\,\alpha\,(1-\sigma_{\mathrm s})\bigr)\mu_k.
 \end{equation}
-This is an Armijo decrease condition for the complementarity measure. For the
-centred safe direction, the line search accepts a step length bounded away from zero
-\citep[Lemma~3.1]{wright1996superlinear}. Hence fallback to a safe step is not a
-patch: it is the part of the method that supplies global progress.
+For the centred direction, this Armijo line search accepts a step length bounded
+away from zero \citep[Lemma~3.1]{wright1996superlinear}; this is the global progress
+mechanism.
 
-The initialization is also chosen to avoid hand tuning. We set
-$x=\tfrac12\mathbf 1$ and $\lambda=0$. Then, with
-$g=\ell\odot h'(\tfrac12\mathbf 1;\gamma)-v(\beta)$, we choose
-$z=\max(g,0)+s\mathbf 1$ and $w=\max(-g,0)+s\mathbf 1$ for a positive common shift
-$s$. This makes $z-w=g$, so the stationarity residual at the box centre is zero while
-$z,w$ remain strictly positive. The constants in the line searches are fixed across
-all instances.
+Finally, the initial point is scaled to the data. Set $x=\tfrac12\mathbf 1$ and
+$\lambda=0$. With $g=\ell\odot h'(\tfrac12\mathbf 1;\gamma)-v(\beta)$, choose
+$z=\max(g,0)+s\mathbf 1$ and $w=\max(-g,0)+s\mathbf 1$ with $s>0$. Then $z-w=g$, so
+the stationarity residual at the box centre is zero and $z,w$ are strictly positive.
 
 \begin{proposition}[Global convergence]\label{prop:ipm}
 Fix $\theta=(\beta,\gamma)$ with $\gamma\in\Gamma$, and suppose the OD polytope
@@ -631,25 +601,20 @@ superlinear.
 \end{proposition}
 
 \begin{proof}
-By the specification of $\Gamma$, $h''(\cdot;\gamma)>0$ on $(0,1)$, so
-$F(\cdot;\gamma)=\sum_i\ell_i h(\cdot;\gamma)$ is strictly convex; minimised over the
-compact polytope $\cX_b$ this gives the unique $x^*_b(\theta)$ of~\textup{(i)}, and
-the KKT map of~\eqref{eq:inner-problem} is monotone. For~\textup{(ii)}, at any
-strictly interior iterate the curvature
-$\Theta_i=\ell_i h''(x_i;\gamma)+z_i/x_i+w_i/(1-x_i)$ is strictly positive, so
-$H_\mu=C\operatorname{diag}(\Theta)^{-1}C^\top$ is positive semidefinite, and positive
-definite once the per-component constant nullspace of $C=A$ is grounded; grounding
-fixes the multiplier gauge but does not change $x^*_b$. Thus
-\eqref{eq:ipm-normal} has a unique grounded solution. This positive definiteness is
-the invertibility condition required by the Ralph--Wright theory, and here it follows
-from strict convexity. Monotonicity and this invertibility imply existence of a
-nonvanishing safe-step length \citep[Lemma~3.1]{wright1996superlinear}, giving
-\textup{(iii)}. Slater feasibility keeps the iterates bounded, and the global
-convergence theorem for the safe-step/fast-step interior method
-\citep[Theorem~1]{ralph2000superlinear} gives~\textup{(iv)}. The superlinear
-statement is \citet[Theorem~2]{ralph2000superlinear}; importantly, that result does
-not require the active-constraint Jacobian to have full rank, which is useful here
-because incidence matrices are rank deficient.
+Because $\gamma\in\Gamma$, $h''(\cdot;\gamma)>0$ on $(0,1)$. Hence
+$F(\cdot;\gamma)$ is strictly convex, and minimisation over the compact polytope
+$\cX_b$ gives a unique primal solution, proving~\textup{(i)}. The same strict
+convexity makes the KKT map monotone. At any strictly interior iterate,
+$\Theta_i>0$; after grounding the incidence matrix to remove the multiplier gauge,
+$C\operatorname{diag}(\Theta)^{-1}C^\top$ is positive definite on the grounded
+space. This proves~\textup{(ii)}. The monotonicity, Slater feasibility, and
+positive-definite reduced Newton system are exactly the assumptions used by the
+safe-step/fast-step interior-point theory. The safe-step length bound follows from
+\citet[Lemma~3.1]{wright1996superlinear}, giving~\textup{(iii)}, and global
+convergence follows from \citet[Theorem~1]{ralph2000superlinear}, giving
+\textup{(iv)}. Under strict complementarity, local superlinear convergence follows
+from \citet[Theorem~2]{ralph2000superlinear}; that theorem does not require the
+active-constraint Jacobian to have full rank.
 \end{proof}
 
 The result is meant as a convergence statement, not as a tuning recipe. The constants
@@ -668,6 +633,7 @@ a generic conic solver for each OD subproblem.
 \State \textbf{Initialise} at the box centre with zero stationarity residual:
 \Statex \quad $x\gets\tfrac12\mathbf 1$,\ \ $\lambda\gets0$,\ \ $g\gets\ell\odot h'(x;\gamma)-v(\beta)$,\ \ $s\gets1+\tfrac1{10}\|g\|_\infty$,\ \ $z\gets\max(g,0)+s\mathbf 1$,\ \ $w\gets\max(-g,0)+s\mathbf 1$.
 \For{$k=0,1,2,\ldots$}
+    \State $y_k\gets(x,\lambda,z,w)$.
     \State $r_{\mathrm d}\gets\ell\odot h'(x;\gamma)-v(\beta)+C^\top\lambda-z+w$,\ \ $r_{\mathrm p}\gets Cx-d$,\ \ $\mu\gets\tfrac1{2n}\bigl[x^\top z+(\mathbf 1-x)^\top w\bigr]$.
     \If{$\|(r_{\mathrm d},r_{\mathrm p})\|_\infty\le\epsilon_{\mathrm{feas}}$ \textbf{and} $\mu\le\epsilon_\mu$}
         \State \textbf{return} $(\lambda,x)$ as $(\lambda_b^*(\theta),x_b^*(\theta))$.
