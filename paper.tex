@@ -512,6 +512,8 @@ back-substitution:
     \Delta w=\frac{q_w+w\odot\Delta x}{\mathbf 1-x}.
 \end{equation}
 The only large linear algebra object in this Newton step is $H_\mu$.
+Appendix~\ref{app:ipm-elimination} gives the elimination and back-substitution
+steps.
 
 \begin{lemma}[Laplacian structure]\label{lem:Hk-PSD}
 For any nonnegative diagonal $W$,
@@ -695,6 +697,73 @@ TBC: Estimate a nice base model with  a nice set of parameters. Show estimates f
 \section{Concluding remarks}\label{sec:conclusion}
 
 TBC
+
+\appendix
+
+\section{Eliminating the primal and bound-multiplier directions}
+\label{app:ipm-elimination}
+
+This appendix derives the normal equation~\eqref{eq:ipm-normal} and the
+back-substitution formulas~\eqref{eq:ipm-backsub}. Start from the Newton system
+\eqref{eq:newton-system}:
+\[
+\begin{aligned}
+    \operatorname{diag}(\ell\odot h''(x;\gamma))\Delta x
+        +C^\top\Delta\lambda-\Delta z+\Delta w &= -r_{\mathrm d},\\
+    C\Delta x &= -r_{\mathrm p},\\
+    z\odot\Delta x+x\odot\Delta z &= q_z,\\
+    -w\odot\Delta x+(\mathbf 1-x)\odot\Delta w &= q_w.
+\end{aligned}
+\]
+All divisions below are elementwise. Since the interior-point iterate satisfies
+$0<x<1$ and $z,w>0$, the complementarity equations can be solved coordinate by
+coordinate:
+\begin{equation}\label{eq:app-dzdw}
+    \Delta z=\frac{q_z-z\odot\Delta x}{x},
+    \qquad
+    \Delta w=\frac{q_w+w\odot\Delta x}{\mathbf 1-x}.
+\end{equation}
+Substituting~\eqref{eq:app-dzdw} into the stationarity equation gives
+\[
+\begin{aligned}
+&\operatorname{diag}(\ell\odot h''(x;\gamma))\Delta x
+    +C^\top\Delta\lambda
+    -\frac{q_z-z\odot\Delta x}{x}
+    +\frac{q_w+w\odot\Delta x}{\mathbf 1-x}
+    =-r_{\mathrm d}.
+\end{aligned}
+\]
+Collecting the terms that multiply $\Delta x$ yields
+\[
+    \Theta\odot\Delta x+C^\top\Delta\lambda
+    =
+    -r_{\mathrm d}+\frac{q_z}{x}-\frac{q_w}{\mathbf 1-x}
+    =:s,
+\]
+where
+\[
+    \Theta_i=\ell_i h''(x_i;\gamma)+\frac{z_i}{x_i}
+        +\frac{w_i}{1-x_i}.
+\]
+Therefore
+\begin{equation}\label{eq:app-dx}
+    \Delta x=\operatorname{diag}(\Theta)^{-1}(s-C^\top\Delta\lambda).
+\end{equation}
+Finally, impose the linearized feasibility equation $C\Delta x=-r_{\mathrm p}$:
+\[
+    C\operatorname{diag}(\Theta)^{-1}(s-C^\top\Delta\lambda)
+    =-r_{\mathrm p}.
+\]
+Rearranging gives the normal equation for the multiplier direction,
+\[
+    C\operatorname{diag}(\Theta)^{-1}C^\top\Delta\lambda
+    =
+    r_{\mathrm p}+C\operatorname{diag}(\Theta)^{-1}s.
+\]
+This is~\eqref{eq:ipm-normal}. Once $\Delta\lambda$ is obtained from this
+weighted Laplacian system, $\Delta x$ follows from~\eqref{eq:app-dx}, and then
+$(\Delta z,\Delta w)$ follow from~\eqref{eq:app-dzdw}. This is the
+back-substitution step~\eqref{eq:ipm-backsub}.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
