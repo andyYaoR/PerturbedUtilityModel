@@ -436,25 +436,15 @@ Thus, for $\mu>0$, both the primal variables and bound multipliers stay strictly
 positive; as $\mu\downarrow0$, the perturbed system approaches the original KKT
 system.
 
-\paragraph{Newton solve.} At a strictly interior iterate $(x,\lambda,z,w)$, define
+\paragraph{Newton solve.} At a strictly interior iterate $(x,\lambda,z,w)$, let
 \[
     r_{\mathrm d}=\ell\odot h'(x;\gamma)-v(\beta)+C^\top\lambda-z+w,
     \qquad
     r_{\mathrm p}=Cx-d.
 \]
-Let $(q_z,q_w)$ be the desired linearized changes in the two complementarity
-products. Linearization gives
-\begin{equation}\label{eq:newton-system}
-\begin{aligned}
-    \operatorname{diag}(\ell\odot h''(x;\gamma))\Delta x
-        +C^\top\Delta\lambda-\Delta z+\Delta w &= -r_{\mathrm d},\\
-    C\Delta x &= -r_{\mathrm p},\\
-    z\odot\Delta x+x\odot\Delta z &= q_z,\\
-    -w\odot\Delta x+(\mathbf 1-x)\odot\Delta w &= q_w.
-\end{aligned}
-\end{equation}
-Eliminating $\Delta z$, $\Delta w$, and $\Delta x$ reduces this system to one
-equation for $\Delta\lambda$:
+For any chosen complementarity targets $(q_z,q_w)$, linearizing the perturbed KKT
+system and eliminating the primal and bound-multiplier directions gives the reduced
+normal equation
 \begin{equation}\label{eq:ipm-normal}
     H_\mu\Delta\lambda
     = r_{\mathrm p}
@@ -469,51 +459,25 @@ where
     \qquad
     s=-r_{\mathrm d}+\frac{q_z}{x}-\frac{q_w}{\mathbf 1-x}.
 \]
-The remaining directions are then recovered by back-substitution:
+After solving~\eqref{eq:ipm-normal}, the remaining directions are recovered by
 \begin{equation}\label{eq:ipm-backsub}
     \Delta x=\operatorname{diag}(\Theta)^{-1}(s-C^\top\Delta\lambda),\qquad
     \Delta z=\frac{q_z-z\odot\Delta x}{x},\qquad
     \Delta w=\frac{q_w+w\odot\Delta x}{\mathbf 1-x}.
 \end{equation}
 Here $H_\mu$ is a weighted graph Laplacian with the same sparsity pattern as the
-network incidence matrix. Appendix~\ref{app:ipm-elimination} gives the algebra.
-The remaining choices are the targets $(q_z,q_w)$ and the step length.
+network incidence matrix; Appendix~\ref{app:ipm-elimination} gives the algebra.
+Thus the main PURC-specific computation is a Laplacian solve, not a generic conic
+subproblem.
 
-\paragraph{Predictor--corrector direction.} Mehrotra's method
-\citep{mehrotra1992implementation,wright1997primal} chooses $(q_z,q_w)$ with two
-right-hand sides and one factorization of $H_\mu$. The affine predictor sets
-$q_z=-x\odot z$ and $q_w=-(\mathbf 1-x)\odot w$, asking how much complementarity
-would remain if the linearized products were driven toward zero.
-
-For any direction, strict positivity is first protected by the
-\emph{fraction-to-boundary} lengths
-\begin{equation}\label{eq:frac-to-boundary}
-\begin{aligned}
-    \alpha_{\mathrm p} &= \min\Bigl(1,\ \tau\!\!\min_{\Delta x_i < 0}\tfrac{-x_i}{\Delta x_i},\ \tau\!\!\min_{\Delta x_i > 0}\tfrac{1 - x_i}{\Delta x_i}\Bigr), \\
-    \alpha_{\mathrm d} &= \min\Bigl(1,\ \tau\!\!\min_{\Delta z_i < 0}\tfrac{-z_i}{\Delta z_i},\ \tau\!\!\min_{\Delta w_i < 0}\tfrac{-w_i}{\Delta w_i}\Bigr), \qquad \tau = 0.995,
-\end{aligned}
-\end{equation}
-where empty minima are ignored. These are the longest primal and dual moves that
-keep $x\in(0,1)^n$ and $z,w>0$, backed off by the fixed constant $\tau$.
-
-Let $(\Delta x^{\mathrm{aff}},\Delta\lambda^{\mathrm{aff}},
-\Delta z^{\mathrm{aff}},\Delta w^{\mathrm{aff}})$ be the affine direction, and let
-$(\alpha^{\mathrm{aff}}_{\mathrm p},\alpha^{\mathrm{aff}}_{\mathrm d})$ be its
-fraction-to-boundary lengths. The affine complementarity is
-\begin{equation}\label{eq:mu-aff}
-\begin{aligned}
-    \mu_{\mathrm{aff}}=\frac{1}{2n}\Bigl[
-        (x+\alpha^{\mathrm{aff}}_{\mathrm p}\Delta x^{\mathrm{aff}})^\top
-         (z+\alpha^{\mathrm{aff}}_{\mathrm d}\Delta z^{\mathrm{aff}}) + (\mathbf 1-x-\alpha^{\mathrm{aff}}_{\mathrm p}\Delta x^{\mathrm{aff}})^\top
-           (w+\alpha^{\mathrm{aff}}_{\mathrm d}\Delta w^{\mathrm{aff}})\Bigr],
-\end{aligned}
-\end{equation}
-the average complementarity after the largest admissible affine move.
-
-The corrector uses
-$\sigma=(\mu_{\mathrm{aff}}/\mu)^3$. When the affine step is effective, $\sigma$ is
-small and the method follows it aggressively; otherwise $\sigma$ increases
-centring. The corrected targets are
+\paragraph{Predictor--corrector direction.} We use the standard Mehrotra
+predictor--corrector choice \citep{mehrotra1992implementation,wright1997primal}.
+The affine predictor solves~\eqref{eq:ipm-normal} with
+$q_z=-x\odot z$ and $q_w=-(\mathbf 1-x)\odot w$. Let
+$\mu_{\mathrm{aff}}$ be the average complementarity of the resulting
+fraction-to-boundary affine trial point, and set
+$\sigma=(\mu_{\mathrm{aff}}/\mu)^3$. The corrector reuses the same factorization
+with the second-order targets
 \begin{equation}\label{eq:mehrotra-rhs}
     q_z = \sigma\mu\,\mathbf 1 - x\odot z
         - \Delta x^{\mathrm{aff}}\!\odot\Delta z^{\mathrm{aff}},
@@ -522,8 +486,6 @@ centring. The corrected targets are
         + \Delta x^{\mathrm{aff}}\!\odot\Delta w^{\mathrm{aff}},
 \end{equation}
 which yield the corrector direction $\Delta=(\Delta x,\Delta\lambda,\Delta z,\Delta w)$.
-Taking the full fraction-to-boundary step along $\Delta$ is the bare Mehrotra
-heuristic. The safeguard below decides whether that step is acceptable.
 
 \paragraph{Globalization and convergence.} Fraction-to-boundary controls only
 positivity. It does not prevent one complementarity product from becoming tiny while
@@ -546,13 +508,13 @@ The wide central neighbourhood is
 \end{equation}
 The average in~\eqref{eq:nbhd} is evaluated at the same point $y$. Thus membership
 means that no lower- or upper-bound product is too small relative to that point's
-own average. The multiplier $\lambda$ is included in $y$ because it is part of the
-iterate, but centrality depends only on $(x,z,w)$.
+own average.
 
 Now fix the current iterate
 $y_k=(x_k,\lambda_k,z_k,w_k)$ and write $\mu_k=\bar\mu(y_k)$. Given a search
-direction $\Delta$, scale its primal and dual fraction-to-boundary lengths by a
-common backtracking factor $\alpha\in[0,1]$:
+direction $\Delta$, let $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ be the standard
+fraction-to-boundary primal and dual step lengths, backed off by a fixed factor
+$\tau<1$. A common line-search multiplier $\alpha\in[0,1]$ gives
 \begin{equation}\label{eq:trial-point}
     x_k(\alpha)=x_k+\alpha\,\alpha_{\mathrm p}\,\Delta x,\qquad
     (\lambda_k,z_k,w_k)(\alpha)
@@ -566,24 +528,22 @@ with trial complementarity
 \end{equation}
 Because $y_k(0)=y_k$, we have $\mu_k(0)=\mu_k$.
 
-The line search first tries a \emph{fast step}: use the Mehrotra corrector direction
-and take the largest backtracked $\alpha$ satisfying
+The line search first tries the Mehrotra corrector direction and accepts the largest
+backtracked $\alpha$ satisfying
 \begin{equation}\label{eq:fast-step}
     y_k(\alpha)\in\cN(\nu)\quad\text{and}\quad \mu_k(\alpha)\le\rho\,\mu_k.
 \end{equation}
-If the full Mehrotra step satisfies~\eqref{eq:fast-step}, the safeguard is
-transparent. If no fast step is accepted, we recompute a centred safe direction with
+If this fast step fails, we recompute a centred safe direction with
 $\sigma_{\mathrm s}\in[\underline\sigma,\overline\sigma]\subset(0,1)$ and no
-second-order correction. The accepted safe step is the largest backtracked $\alpha$
-satisfying
+second-order correction, and accept the largest backtracked $\alpha$ satisfying
 \begin{equation}\label{eq:safe-step}
     y_k(\alpha)\in\cN(\nu)
     \quad\text{and}\quad
     \mu_k(\alpha)\le\bigl(1-\kappa\,\alpha\,(1-\sigma_{\mathrm s})\bigr)\mu_k.
 \end{equation}
-For the centred direction, this Armijo line search accepts a step length bounded
-away from zero \citep[Lemma~3.1]{wright1996superlinear}; this is the global progress
-mechanism.
+The safe step is the source of the global guarantee: its Armijo line search accepts
+a step length bounded away from zero
+\citep[Lemma~3.1]{wright1996superlinear}.
 
 Finally, the initial point is scaled to the data. Set $x=\tfrac12\mathbf 1$ and
 $\lambda=0$. With $g=\ell\odot h'(\tfrac12\mathbf 1;\gamma)-v(\beta)$, choose
@@ -632,7 +592,7 @@ a generic conic solver for each OD subproblem.
 \begin{algorithmic}[1]
 \Statex \textbf{Input:} parameters $\theta=(\beta,\gamma)$; OD polytope $\cX_b=\{x\in[0,1]^n:Cx=d\}$; tolerances $\epsilon_{\mathrm{feas}},\epsilon_\mu$.
 \Statex \textbf{Fixed constants:} centrality $\nu$, fast factor $\rho<1$, safe centring interval $[\underline\sigma,\overline\sigma]\subset(0,1)$, Armijo constant $\kappa$, fraction-to-boundary constant $\tau$, backtracking factor $\chi$.
-\Statex \textbf{Notation:} $\textsc{Dir}(q_z,q_w)$ solves~\eqref{eq:ipm-normal} and back-substitutes~\eqref{eq:ipm-backsub}; $y_k(\alpha)$ and $\mu_k(\alpha)$ are defined in~\eqref{eq:trial-point}--\eqref{eq:mu-alpha}.
+\Statex \textbf{Notation:} $\textsc{Dir}(q_z,q_w)$ denotes the Laplacian Newton solve~\eqref{eq:ipm-normal} followed by~\eqref{eq:ipm-backsub}.
 \State \textbf{Initialise} at the box centre with zero stationarity residual:
 \Statex \quad $x\gets\tfrac12\mathbf 1$,\ \ $\lambda\gets0$,\ \ $g\gets\ell\odot h'(x;\gamma)-v(\beta)$,\ \ $s\gets1+\tfrac1{10}\|g\|_\infty$,\ \ $z\gets\max(g,0)+s\mathbf 1$,\ \ $w\gets\max(-g,0)+s\mathbf 1$.
 \For{$k=0,1,2,\ldots$}
@@ -641,11 +601,11 @@ a generic conic solver for each OD subproblem.
     \If{$\|(r_{\mathrm d},r_{\mathrm p})\|_\infty\le\epsilon_{\mathrm{feas}}$ \textbf{and} $\mu\le\epsilon_\mu$}
         \State \textbf{return} $(\lambda,x)$ as $(\lambda_b^*(\theta),x_b^*(\theta))$.
     \EndIf
-    \State $\Theta_i\gets\ell_i h''(x_i;\gamma)+z_i/x_i+w_i/(1-x_i)$; factorize $H_\mu\gets C\operatorname{diag}(\Theta)^{-1}C^\top$.
-    \State \emph{Predictor:} $\Delta^{\mathrm{aff}}\gets\textsc{Dir}\bigl(-x\odot z,\,-(\mathbf 1-x)\odot w\bigr)$; compute $\mu_{\mathrm{aff}}$ by~\eqref{eq:mu-aff}.
+    \State Form $\Theta_i=\ell_i h''(x_i;\gamma)+z_i/x_i+w_i/(1-x_i)$ and factorize $H_\mu=C\operatorname{diag}(\Theta)^{-1}C^\top$.
+    \State \emph{Predictor:} $\Delta^{\mathrm{aff}}\gets\textsc{Dir}\bigl(-x\odot z,\,-(\mathbf 1-x)\odot w\bigr)$; set $\mu_{\mathrm{aff}}$ to the affine fraction-to-boundary trial complementarity.
     \State Set $\sigma\gets(\mu_{\mathrm{aff}}/\mu)^3$.
     \State \emph{Corrector:} $\Delta\gets\textsc{Dir}(q_z,q_w)$ with $q_z,q_w$ from~\eqref{eq:mehrotra-rhs}.
-    \State Compute fraction-to-boundary lengths $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ for $\Delta$ by~\eqref{eq:frac-to-boundary}.
+    \State Compute the primal and dual fraction-to-boundary lengths for $\Delta$.
     \State \emph{Fast step:} let $\alpha^\star$ be the first value in $\{1,\chi,\chi^2,\ldots\}$ satisfying~\eqref{eq:fast-step}.
     \If{$\alpha^\star$ exists}
         \State $(x,\lambda,z,w)\gets y_k(\alpha^\star)$. \Comment{bare Mehrotra step, taken when admissible}
@@ -993,8 +953,8 @@ TBC
 \label{app:ipm-elimination}
 
 This appendix derives the normal equation~\eqref{eq:ipm-normal} and the
-back-substitution formulas~\eqref{eq:ipm-backsub}. Start from the Newton system
-\eqref{eq:newton-system}:
+back-substitution formulas~\eqref{eq:ipm-backsub}. Start from the linearized KKT
+system:
 \[
 \begin{aligned}
     \operatorname{diag}(\ell\odot h''(x;\gamma))\Delta x
