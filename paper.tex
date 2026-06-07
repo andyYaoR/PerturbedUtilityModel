@@ -543,32 +543,26 @@ the stationarity residual at the box centre is zero and $z,w$ are strictly posit
 
 \begin{proposition}[Global convergence]\label{prop:ipm}
 Fix $\theta=(\beta,\gamma)$ with $\gamma\in\Gamma$, and suppose the OD polytope
-$\cX_b$ contains a strictly interior flow ($0<x<\mathbf 1$, $Cx=d$). Then
-\textup{(i)} the inner minimiser $x^*_b(\theta)$ of~\eqref{eq:inner-problem} is
-unique; \textup{(ii)} the Newton system~\eqref{eq:ipm-normal} is nonsingular at every
-strictly interior iterate after the incidence matrix is grounded; \textup{(iii)} the
-safe-step line search in~\eqref{eq:safe-step} accepts a step length bounded away from
-$0$; and \textup{(iv)} every limit point of the safeguarded iterates is a
-primal--dual optimum of~\eqref{eq:inner-problem}, with primal part
-$x^*_b(\theta)$. If the solution is strictly complementary, the local rate is
-superlinear.
+$\cX_b$ contains a strictly interior flow ($0<x<\mathbf 1$, $Cx=d$). Then the
+safeguarded Algorithm~\ref{alg:inner} is globally convergent: every limit point is a
+primal--dual optimum of~\eqref{eq:inner-problem}, and its primal component is the
+unique minimiser $x^*_b(\theta)$. If the solution is strictly complementary, the
+local rate is superlinear.
 \end{proposition}
 
 \begin{proof}
-Because $\gamma\in\Gamma$, $h''(\cdot;\gamma)>0$ on $(0,1)$. Hence
-$F(\cdot;\gamma)$ is strictly convex, and minimisation over the compact polytope
-$\cX_b$ gives a unique primal solution, proving~\textup{(i)}. The same strict
-convexity makes the KKT map monotone. At any strictly interior iterate,
+Since $\gamma\in\Gamma$, $h''(\cdot;\gamma)>0$ on $(0,1)$. Thus
+$F(\cdot;\gamma)$ is strictly convex, so the inner problem has a unique primal
+minimiser and its KKT map is monotone. At any strictly interior iterate
 $\Theta_i>0$; after grounding the incidence matrix to remove the multiplier gauge,
 $C\operatorname{diag}(\Theta)^{-1}C^\top$ is positive definite on the grounded
-space. This proves~\textup{(ii)}. The monotonicity, Slater feasibility, and
-positive-definite reduced Newton system are exactly the assumptions used by the
-safe-step/fast-step interior-point theory. The safe-step length bound follows from
-\citet[Lemma~3.1]{wright1996superlinear}, giving~\textup{(iii)}, and global
-convergence follows from \citet[Theorem~1]{ralph2000superlinear}, giving
-\textup{(iv)}. Under strict complementarity, local superlinear convergence follows
-from \citet[Theorem~2]{ralph2000superlinear}; that theorem does not require the
-active-constraint Jacobian to have full rank.
+space. Together with the assumed strict feasibility, these are the monotonicity,
+Slater, and nonsingular reduced-Newton conditions required by the
+safe-step/fast-step interior-point theory. The safe-step length bound is
+\citet[Lemma~3.1]{wright1996superlinear}, and global convergence follows from
+\citet[Theorem~1]{ralph2000superlinear}. Under strict complementarity, local
+superlinear convergence follows from \citet[Theorem~2]{ralph2000superlinear}, which
+does not require the active-constraint Jacobian to have full rank.
 \end{proof}
 
 The result is meant as a convergence statement, not as a tuning recipe. The constants
