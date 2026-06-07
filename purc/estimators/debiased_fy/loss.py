@@ -61,6 +61,7 @@ class DebiasedFYLoss:
         *,
         debias: bool = True,
         warm_start: bool = True,
+        basis=None,
     ) -> None:
         self.problem = problem
         self.solver = solver
@@ -68,6 +69,16 @@ class DebiasedFYLoss:
         self.L = L
         self.debias = debias
         self.warm_start = warm_start
+        # The sieve-shape parametrization: monomial (gamma) by default, or a fixed
+        # orthonormal basis c with gamma = T c (a constant linear map at this
+        # boundary -- the solver still receives monomial gamma and the debiasing is
+        # unchanged; the gamma-score just pulls back by T^T).
+        if basis is None:
+            from .basis import SieveBasis
+
+            basis = SieveBasis.monomial(L)
+        self.basis = basis
+        self._T = None if basis.is_monomial else as_tensor(basis.T).to(DEFAULT_DTYPE)
         self.layout = ParamLayout(problem.num_params, L - 2)
         self.ell = as_tensor(problem.constraint.ell).to(DEFAULT_DTYPE).reshape(1, -1)  # [1, N]
         self.ybar = as_tensor(data.ybar).to(DEFAULT_DTYPE)  # [B, N]
@@ -109,7 +120,8 @@ class DebiasedFYLoss:
             ``(Q, grad)`` with ``grad`` a flat tensor like ``theta``.
 
         """
-        beta, gamma = self.layout.unpack(theta)
+        beta, c = self.layout.unpack(theta)
+        gamma = self.basis.to_monomial(c)  # monomial coeffs for the solver (gamma = T c)
         # Q_B is finite for every gamma (the surplus is a max over a compact
         # polytope); Gamma_B is a *constraint*, not the domain of an extended-value
         # objective.  But the primal interior-point forward solver requires a
@@ -137,7 +149,7 @@ class DebiasedFYLoss:
         lin = self.ybar @ v  # [B]
         Q = float(torch.mean(prim + fstar - lin))
 
-        grad = self._scores(xstar, gamma).mean(dim=0)
+        grad = self._pullback(self._scores(xstar, gamma)).mean(dim=0)
         return Q, grad
 
     def value(self, theta) -> float:
@@ -175,20 +187,44 @@ class DebiasedFYLoss:
             s_gamma[:, gi] = torch.where(self.valid[:, deg], contrib, torch.zeros_like(contrib))
         return torch.cat([s_beta, s_gamma], dim=1)
 
-    def per_od_scores(self, theta) -> torch.Tensor:
+    def _pullback(self, scores: torch.Tensor) -> torch.Tensor:
         """
-        Per-OD scores ``s_b = grad tilde_ell_b(theta)``, shape ``[B, P]``.
+        Pull the gamma block of a ``[B, P]`` monomial-score matrix into the basis ``c``.
+
+        Right-multiplying the ``[B, L-2]`` gamma block by ``T`` realizes the chain-rule
+        pullback ``T^T g`` for the mean gradient (and ``T^T K T`` for the per-OD score
+        covariance) in one matmul, so both the gradient and the sandwich come out in
+        ``c``-space.  A no-op for the monomial basis.
 
         Args:
-            theta: Flat parameter tensor.
+            scores: ``[B, P]`` monomial-space per-OD scores.
+
+        Returns:
+            ``[B, P]`` scores with the gamma block expressed in the basis ``c``.
+
+        """
+        if self._T is None:
+            return scores
+        gs = self.layout.gamma_slice
+        out = scores.clone()
+        out[:, gs] = scores[:, gs] @ self._T
+        return out
+
+    def per_od_scores(self, theta) -> torch.Tensor:
+        """
+        Per-OD scores ``s_b = grad tilde_ell_b(theta)``, shape ``[B, P]`` (in basis ``c``).
+
+        Args:
+            theta: Flat parameter tensor (gamma block in the basis ``c``).
 
         Returns:
             ``[B, P]`` per-OD score matrix (mean over ``b`` is the gradient).
 
         """
-        beta, gamma = self.layout.unpack(theta)
+        beta, c = self.layout.unpack(theta)
+        gamma = self.basis.to_monomial(c)
         xstar, _ = self._solve(beta, gamma)
-        return self._scores(xstar, gamma)
+        return self._pullback(self._scores(xstar, gamma))
 
 
 class NaiveFYLoss(DebiasedFYLoss):
@@ -199,5 +235,5 @@ class NaiveFYLoss(DebiasedFYLoss):
     biased away from zero at ``theta_0``, unlike the debiased loss).
     """
 
-    def __init__(self, problem, solver, data, L, *, warm_start: bool = True) -> None:
-        super().__init__(problem, solver, data, L, debias=False, warm_start=warm_start)
+    def __init__(self, problem, solver, data, L, *, warm_start: bool = True, basis=None) -> None:
+        super().__init__(problem, solver, data, L, debias=False, warm_start=warm_start, basis=basis)

@@ -11,6 +11,7 @@ and the sandwich-variance utilities.
 
 from __future__ import annotations
 
+from .basis import SieveBasis
 from .loss import DebiasedFYLoss, NaiveFYLoss
 from .optimizer import DebiasedFYEstimator, EstimatorConfig
 from .projection import GammaProjection, project_bernstein, project_nonneg
@@ -18,6 +19,7 @@ from .ustats import falling_factorial, u_statistics
 from .variance import per_od_scores, sandwich_variance
 
 __all__ = [
+    "SieveBasis",
     "DebiasedFYLoss",
     "NaiveFYLoss",
     "DebiasedFYEstimator",

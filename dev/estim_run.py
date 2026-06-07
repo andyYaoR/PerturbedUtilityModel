@@ -36,6 +36,13 @@ def main() -> None:
     ap.add_argument(
         "--reps", type=int, default=None, help="Cap replications per cell (cost control)."
     )
+    ap.add_argument(
+        "--basis",
+        default=None,
+        choices=["monomial", "orthonormal"],
+        help="Sieve parametrization (default monomial).  Honored by the score and "
+        "identifiability claims (1, 5); claim 5 also reports both bases internally.",
+    )
     args = ap.parse_args()
 
     import estim_claims
@@ -49,9 +56,11 @@ def main() -> None:
         net = args.network or "synthetic (built-in)"
         print(f"CLAIM {c} [{net}]: {ALL[c].__doc__.strip().splitlines()[0]}")
         print("=" * 78)
-        results[c] = ALL[c](args.quick, network=args.network)
+        results[c] = ALL[c](args.quick, network=args.network, basis=args.basis)
         print()
-    blob = json.dumps({"network": args.network, "results": results}, indent=2, default=float)
+    blob = json.dumps(
+        {"network": args.network, "basis": args.basis, "results": results}, indent=2, default=float
+    )
     print("SUMMARY (json):")
     print(blob)
     if args.out:

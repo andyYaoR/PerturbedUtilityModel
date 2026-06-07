@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import torch
 
-from ...static_purc.utils.torch_compat import DEFAULT_DTYPE
+from ...static_purc.utils.torch_compat import DEFAULT_DTYPE, as_tensor
 
 
 @dataclass
@@ -125,3 +125,30 @@ def sandwich_variance(loss, theta_hat, *, h: float = 1e-5) -> SandwichResult:
     se = torch.sqrt(torch.clamp(torch.diag(var), min=0.0))
     cond_A = float(torch.linalg.cond(A))
     return SandwichResult(var=var, se=se, A=A, K=K, cond_A=cond_A)
+
+
+def to_monomial(sw: SandwichResult, basis, n_beta: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Delta-method map of a ``c``-space sandwich result to the monomial basis.
+
+    When the estimator parametrizes the sieve shape in a basis ``c`` with ``gamma =
+    T c``, the sandwich ``var``/``se`` are in ``c``-space.  Since the map is linear,
+    the monomial covariance is exact: ``J var J^T`` with ``J = blkdiag(I_K, T)``.
+
+    Args:
+        sw: A :class:`SandwichResult` in the active (``c``) coordinates.
+        basis: The :class:`SieveBasis` used (its ``T`` maps ``c -> gamma``).
+        n_beta: Number of utility coefficients ``K`` (the unconstrained block).
+
+    Returns:
+        ``(var_monomial, se_monomial)`` for ``theta = [beta, gamma]``.
+
+    """
+    P = sw.var.shape[0]
+    J = torch.eye(P, dtype=DEFAULT_DTYPE)
+    if not basis.is_monomial:
+        T = as_tensor(basis.T).to(DEFAULT_DTYPE)
+        J[n_beta:, n_beta:] = T
+    var_m = J @ sw.var @ J.T
+    se_m = torch.sqrt(torch.clamp(torch.diag(var_m), min=0.0))
+    return var_m, se_m

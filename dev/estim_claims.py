@@ -29,6 +29,7 @@ from purc.estimators.debiased_fy import (
     EstimatorConfig,
     GammaProjection,
     NaiveFYLoss,
+    SieveBasis,
 )
 from purc.estimators.debiased_fy.variance import sandwich_variance
 from purc.static_purc import PUMProblem, SSNConfig
@@ -64,36 +65,52 @@ def _network(network, default_n: int, default_seed: int):
     return build_network(network, default_seed)
 
 
-def _fit(prob, th0, ods, rng, proj="bernstein", theta_init=None):
+def _make_basis(name, L):
+    """Resolve a basis name -> SieveBasis (None/'monomial' -> power series)."""
+    if name is None or name == "monomial":
+        return SieveBasis.monomial(L)
+    if name == "orthonormal":
+        return SieveBasis.orthonormal(L)
+    raise ValueError(f"unknown basis {name!r}")
+
+
+def _fit(prob, th0, ods, rng, proj="bernstein", theta_init=None, basis=None):
     solver = _solver()
     solver.preprocess(prob)
     data = simulate_dataset(prob, solver, (th0.beta, th0.gamma), ods, rng)
-    est = DebiasedFYEstimator(
-        prob, solver, th0.L, EstimatorConfig(proj=GammaProjection(proj)), theta_init=theta_init
-    )
+    cfg = EstimatorConfig(proj=GammaProjection(proj), basis=_make_basis(basis, th0.L))
+    est = DebiasedFYEstimator(prob, solver, th0.L, cfg, theta_init=theta_init)
     return est.fit(data), data, solver
 
 
-def _fit_safe(prob, th0, ods, rng, proj="bernstein", theta_init=None):
+def _fit_safe(prob, th0, ods, rng, proj="bernstein", theta_init=None, basis=None):
     """
     Fit, returning ``None`` on a rare ill-conditioned (non-PD) random instance.
 
     A degenerate synthetic OD instance can make the (grounded, weighted-Laplacian)
     normal equations numerically indefinite; in a Monte Carlo study such a draw is
-    skipped and counted, rather than aborting the whole sweep.
+    skipped and counted, rather than aborting the whole sweep.  ``basis`` selects the
+    sieve parametrization (``"monomial"`` default, or ``"orthonormal"``).
     """
     try:
-        return _fit(prob, th0, ods, rng, proj=proj, theta_init=theta_init)
+        return _fit(prob, th0, ods, rng, proj=proj, theta_init=theta_init, basis=basis)
     except (np.linalg.LinAlgError, RuntimeError):
         return None
 
 
 # --------------------------------------------------------------------------- #
-def claim1_unbiased_score(quick: bool, network=None) -> dict:
-    """Debiased score ~0 at theta_0; naive plug-in biased upward (shrinks in D)."""
+def claim1_unbiased_score(quick: bool, network=None, basis=None) -> dict:
+    """
+    Debiased score ~0 at theta_0; naive plug-in biased upward (shrinks in D).
+
+    Honors ``basis`` (``"monomial"`` default or ``"orthonormal"``): a fixed linear
+    reparametrization preserves the debiasing, so the debiased score stays ~0 in the
+    orthonormal basis too (the naive score remains biased).
+    """
     th0 = CATALOG["pos345"]
     inc, attrs = _network(network, 30, 0)
     prob = make_problem(inc, th0, seed=1, attrs=attrs)
+    sb = _make_basis(basis, th0.L)
     B = 60 if quick else 200
     reps = _reps(30 if quick else 300)
     Ds = [20, 100] if quick else [20, 100, 1000]
@@ -106,9 +123,11 @@ def claim1_unbiased_score(quick: bool, network=None) -> dict:
             solver.preprocess(prob)
             ods = make_ods(inc.shape[0], B, D, seed=5000 + r)
             data = simulate_dataset(prob, solver, (th0.beta, th0.gamma), ods, rng)
-            th = DebiasedFYLoss(prob, solver, data, th0.L).layout.pack(th0.beta, th0.gamma)
-            gd = to_numpy(DebiasedFYLoss(prob, solver, data, th0.L).value_and_grad(th)[1])
-            gn = to_numpy(NaiveFYLoss(prob, solver, data, th0.L).value_and_grad(th)[1])
+            th = DebiasedFYLoss(prob, solver, data, th0.L, basis=sb).layout.pack(
+                th0.beta, sb.from_monomial(th0.gamma)
+            )
+            gd = to_numpy(DebiasedFYLoss(prob, solver, data, th0.L, basis=sb).value_and_grad(th)[1])
+            gn = to_numpy(NaiveFYLoss(prob, solver, data, th0.L, basis=sb).value_and_grad(th)[1])
             # gamma block is the last L-2 entries.
             ng = th0.L - 2
             deb.append(gd[-ng:])
@@ -127,7 +146,7 @@ def claim1_unbiased_score(quick: bool, network=None) -> dict:
     return out
 
 
-def claim3_consistency(quick: bool, network=None) -> dict:
+def claim3_consistency(quick: bool, network=None, basis=None) -> dict:
     """
     RMSE(theta_hat) vs B; the log-log slope should be about -1/2.
 
@@ -180,7 +199,7 @@ def claim3_consistency(quick: bool, network=None) -> dict:
     }
 
 
-def claim4_coverage(quick: bool, network=None) -> dict:
+def claim4_coverage(quick: bool, network=None, basis=None) -> dict:
     """Sandwich SE vs empirical SD and 95% CI coverage at fixed B."""
     th0 = CATALOG["pos3"]
     inc, attrs = _network(network, 20, 4)
@@ -215,7 +234,7 @@ def claim4_coverage(quick: bool, network=None) -> dict:
     return {"emp_sd": emp_sd.tolist(), "mean_se": mean_se.tolist(), "coverage": cov.tolist()}
 
 
-def claim6_projection(quick: bool, network=None) -> dict:
+def claim6_projection(quick: bool, network=None, basis=None) -> dict:
     """Negative gamma_4: only the Bernstein projection recovers it; R_+ clips to ~0."""
     th0 = CATALOG["neg"]  # gamma = (0.8, -0.3)
     inc, attrs = _network(network, 20, 6)
@@ -241,7 +260,7 @@ def claim6_projection(quick: bool, network=None) -> dict:
     return res
 
 
-def claim7_inner(quick: bool, network=None) -> dict:
+def claim7_inner(quick: bool, network=None, basis=None) -> dict:
     """
     Batched IPM in the loop: fixed low iteration count and oracle accuracy on the sweep.
 
@@ -286,7 +305,7 @@ def claim7_inner(quick: bool, network=None) -> dict:
     return {"cold_iters": cold_iters, "warm_iters": warm_iters, "oracle_maxdiff": maxdiff}
 
 
-def claim2_loss_min(quick: bool, network=None) -> dict:
+def claim2_loss_min(quick: bool, network=None, basis=None) -> dict:
     """
     The FY loss ``Q_B`` is convex with its minimum at ``theta_0`` (grid slices).
 
@@ -329,7 +348,7 @@ def claim2_loss_min(quick: bool, network=None) -> dict:
     return {"Q0": q0, "Qmin": qmin, "argmin_at_theta0": bool(all_at_zero), "slices": slices}
 
 
-def claim5_identifiability(quick: bool, network=None) -> dict:
+def claim5_identifiability(quick: bool, network=None, basis=None) -> dict:
     """
     Per-``gamma_l`` RMSE across ``(B,D)`` and the sieve's collinearity.
 
@@ -370,8 +389,16 @@ def claim5_identifiability(quick: bool, network=None) -> dict:
             blow[f"B{B}_D{D}"] = float(np.mean(np.abs(errs).max(1) > 10.0))  # wild-draw fraction
             print(f"[claim5] B={B:5d} D={D:5d}  per-gamma median|err| (g3,g4,g5)={np.round(mae_l, 3)}"
                   f"  blow-up frac={blow[f'B{B}_D{D}']:.2f}")
-    # Collinearity diagnostics: bread conditioning and gamma-block score correlation
-    # at theta_0 on a well-sampled instance (one FD-Hessian evaluation).
+    # Conditioning at theta_0 on a well-sampled instance, in BOTH the monomial and
+    # the fixed orthonormal basis.  The sieve (gamma-block) condition number is the
+    # quantity the basis controls: orthonormalizing removes the basis-induced
+    # (Hilbert) part, so cond drops sharply -- the sieve is well-identified *as a
+    # function*.  (The full cond(A) is scale-sensitive: orthonormalizing only the
+    # sieve block leaves a beta-vs-c scale mismatch, so the full number is not the
+    # meaningful metric and can even rise.  The individual *monomial* coefficients
+    # remain weakly identified because Var(gamma) = T Var(c) T^T re-amplifies -- the
+    # intrinsic, representation-dependent limit.)  Debiasing-preservation is shown by
+    # claim 1 (the mean debiased score stays ~0 in either basis).
     from purc.estimators.debiased_fy.variance import hessian_fd
 
     solver = _solver()
@@ -379,23 +406,35 @@ def claim5_identifiability(quick: bool, network=None) -> dict:
     rng = np.random.default_rng(424242)
     ods = make_ods(inc.shape[0], 400, 2000, seed=424242)
     data = simulate_dataset(prob, solver, (th0.beta, th0.gamma), ods, rng)
-    loss = DebiasedFYLoss(prob, solver, data, th0.L)
-    A = to_numpy(hessian_fd(loss, loss.layout.pack(th0.beta, th0.gamma)))
-    g = A[-ng:, -ng:]
-    d = np.sqrt(np.clip(np.diag(g), 1e-30, None))
-    corr = (g / np.outer(d, d)).tolist()
-    cond_A = float(np.linalg.cond(A))
-    cond_g = float(np.linalg.cond(g))
-    print(f"[claim5] cond(A)={cond_A:.0f}  gamma-block cond={cond_g:.0f}  "
-          f"gamma-corr offdiag~{np.round([corr[0][1], corr[0][2], corr[1][2]], 3)}")
+    bases = {}
+    corr = None
+    for bname in ("monomial", "orthonormal"):
+        basis = _make_basis(bname, th0.L)
+        loss = DebiasedFYLoss(prob, solver, data, th0.L, basis=basis)
+        theta0 = loss.layout.pack(th0.beta, basis.from_monomial(th0.gamma))
+        A = to_numpy(hessian_fd(loss, theta0))
+        gblk = A[-ng:, -ng:]
+        bases[bname] = {
+            "cond_A_full": float(np.linalg.cond(A)),
+            "cond_gamma_block": float(np.linalg.cond(gblk)),
+        }
+        if bname == "monomial":
+            d = np.sqrt(np.clip(np.diag(gblk), 1e-30, None))
+            corr = (gblk / np.outer(d, d)).tolist()
+        print(f"[claim5] basis={bname:11s} gamma-block cond={bases[bname]['cond_gamma_block']:.0f}"
+              f"  (full cond(A)={bases[bname]['cond_A_full']:.0f})")
+    drop = bases["monomial"]["cond_gamma_block"] / bases["orthonormal"]["cond_gamma_block"]
+    print(f"[claim5] gamma-corr (monomial) offdiag~{np.round([corr[0][1], corr[0][2], corr[1][2]], 3)}"
+          f"  gamma-block cond drop x{drop:.1f} (basis-induced part removed)")
     return {
         "Bs": Bs,
         "Ds": Ds,
         "mae_per_gamma": grid,
         "blowup_frac": blow,
-        "cond_A": cond_A,
-        "cond_gamma_block": cond_g,
+        "cond_gamma_block": bases["monomial"]["cond_gamma_block"],
         "gamma_score_corr": corr,
+        "basis_comparison": bases,
+        "gamma_block_cond_drop": float(drop),
     }
 
 

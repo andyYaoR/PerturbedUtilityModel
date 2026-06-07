@@ -32,6 +32,7 @@ from purc.estimators.debiased_fy import (
     EstimatorConfig,
     GammaProjection,
     NaiveFYLoss,
+    SieveBasis,
     falling_factorial,
     project_bernstein,
     project_nonneg,
@@ -201,6 +202,74 @@ def test_score_zero_at_theta0_when_ybar_is_xstar():
     # The naive loss uses U_l = ybar^l = (x*)^l, so the score is exactly zero.
     loss = NaiveFYLoss(prob, solver, data, L=3)
     _, g = loss.value_and_grad(loss.layout.pack(beta0, gamma0))
+    assert torch.max(torch.abs(g)) < 1e-7
+
+
+# --------------------------------------------------------------------------- #
+# orthonormal sieve basis: debiasing preserved, gradient correct, monomial identity
+# --------------------------------------------------------------------------- #
+def test_monomial_basis_equals_default():
+    """An explicit monomial ``SieveBasis`` reproduces the default (basis=None)."""
+    inc = _network(8, 5)
+    prob = _problem(inc, np.array([0.5, 0.3, 0.1]), seed=6)
+    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver.preprocess(prob)
+    ods = _ods(inc.shape[0], 20, D=2000, seed=7)
+    data = simulate_dataset(prob, solver, (np.array([-2.0]), np.array([0.5, 0.3, 0.1])), ods,
+                            np.random.default_rng(8))
+    theta = DebiasedFYLoss(prob, solver, data, L=5).layout.pack(np.array([-1.5]), np.array([0.2, 0.1, 0.05]))
+    _, g0 = DebiasedFYLoss(prob, solver, data, L=5).value_and_grad(theta)
+    _, g1 = DebiasedFYLoss(prob, solver, data, L=5, basis=SieveBasis.monomial(5)).value_and_grad(theta)
+    # The monomial basis is a no-op; the two agree up to warm-start FP noise in the
+    # shared solver (~1e-15), not any basis effect.
+    torch.testing.assert_close(g0, g1, atol=1e-10, rtol=0.0)
+
+
+def test_loss_gradient_matches_fd_in_orthonormal_basis():
+    """The c-space gradient (T^T pullback) matches a central FD of Q in c-space."""
+    inc = _network(8, 5)
+    gamma0 = np.array([0.5, 0.3, 0.1])
+    prob = _problem(inc, gamma0, seed=6)
+    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver.preprocess(prob)
+    ods = _ods(inc.shape[0], 30, D=2000, seed=7)
+    data = simulate_dataset(prob, solver, (np.array([-2.0]), gamma0), ods, np.random.default_rng(8))
+    basis = SieveBasis.orthonormal(5)
+    loss = DebiasedFYLoss(prob, solver, data, L=5, basis=basis)
+    # A point whose monomial image is feasible (start from a mild gamma).
+    theta = loss.layout.pack(np.array([-1.5]), basis.from_monomial(np.array([0.3, 0.15, 0.05])))
+    _, g = loss.value_and_grad(theta)
+    fd = torch.zeros_like(g)
+    h = 1e-5
+    for j in range(g.numel()):
+        e = torch.zeros_like(g)
+        e[j] = h
+        fd[j] = (loss.value(theta + e) - loss.value(theta - e)) / (2 * h)
+    assert torch.max(torch.abs(g - fd)) < 1e-6
+
+
+def test_debiasing_preserved_in_orthonormal_basis():
+    """With ybar=x*, the c-space score vanishes (debiasing survives the fixed map T)."""
+    inc = _network(8, 9)
+    gamma0 = np.array([0.5, 0.3, 0.1])
+    prob = _problem(inc, gamma0, seed=10)
+    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver.preprocess(prob)
+    beta0 = np.array([-2.0])
+    ods = _ods(inc.shape[0], 12, D=10, seed=11)
+    b_batch = np.stack([od.b for od in ods])
+    xstar = to_numpy(solver.solve_batch((beta0, gamma0), b_batch).x)
+    data = SimulatedData(
+        n_counts=torch.as_tensor(xstar, dtype=torch.float64),
+        ybar=torch.as_tensor(xstar, dtype=torch.float64),
+        D=torch.ones(len(ods), dtype=torch.float64),
+        b_batch=torch.as_tensor(b_batch, dtype=torch.float64),
+    )
+    basis = SieveBasis.orthonormal(5)
+    theta0 = DebiasedFYLoss(prob, solver, data, L=5, basis=basis).layout.pack(
+        beta0, basis.from_monomial(gamma0)
+    )
+    _, g = NaiveFYLoss(prob, solver, data, L=5, basis=basis).value_and_grad(theta0)
     assert torch.max(torch.abs(g)) < 1e-7
 
 

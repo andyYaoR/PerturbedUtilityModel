@@ -22,6 +22,7 @@ import torch
 from ...static_purc.problem import PUMProblem
 from ...static_purc.utils.torch_compat import DEFAULT_DTYPE, as_tensor
 from ..base import EstimationResult, Estimator, SimulatedData
+from .basis import SieveBasis
 from .loss import DebiasedFYLoss
 from .projection import GammaProjection
 from .variance import hessian_fd
@@ -59,6 +60,7 @@ class EstimatorConfig:
     ridge: float = 1e-8
     fd_step: float = 1e-5
     proj: GammaProjection = field(default_factory=lambda: GammaProjection("bernstein"))
+    basis: object = None  # SieveBasis; None -> monomial (power-series) parametrization
     verbose: bool = False
 
 
@@ -92,9 +94,9 @@ class DebiasedFYEstimator(Estimator):
         self.theta_init = theta_init
 
     def _project(self, theta, layout):
-        """Project the gamma block of ``theta`` onto the convexity set."""
+        """Project the gamma block of ``theta`` onto the convexity set (basis-aware)."""
         beta, gamma = layout.unpack(theta)
-        return layout.pack(beta, self.config.proj(gamma))
+        return layout.pack(beta, self._proj(gamma))
 
     def fit(self, data: SimulatedData) -> EstimationResult:
         """
@@ -108,7 +110,10 @@ class DebiasedFYEstimator(Estimator):
 
         """
         cfg = self.config
-        loss = DebiasedFYLoss(self.problem, self.solver, data, self.L, warm_start=True)
+        basis = cfg.basis or SieveBasis.monomial(self.L)
+        # A fresh basis-aware projection (don't mutate the user's config.proj).
+        self._proj = GammaProjection(cfg.proj.kind, basis=basis)
+        loss = DebiasedFYLoss(self.problem, self.solver, data, self.L, warm_start=True, basis=basis)
         layout = loss.layout
         P = layout.size
         if self.theta_init is None:
@@ -182,14 +187,15 @@ class DebiasedFYEstimator(Estimator):
                 converged = ginf < cfg.tol_grad or stalled or (accepted and step_norm < cfg.tol_step)
                 break
 
-        beta, gamma = layout.unpack(theta)
+        beta, c = layout.unpack(theta)
+        gamma = basis.to_monomial(c)  # report gamma in the monomial basis (gamma = T c)
         return EstimationResult(
-            theta_hat=theta,
+            theta_hat=theta,  # gamma block is in the basis coordinates c
             beta_hat=beta,
             gamma_hat=gamma,
             objective=Q,
             grad=g,
             n_outer=nit,
             converged=converged,
-            extras={"gmap_history": ginf_hist},
+            extras={"gmap_history": ginf_hist, "c_hat": c, "basis": basis.name},
         )
