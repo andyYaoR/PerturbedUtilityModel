@@ -933,6 +933,31 @@ pair) than the aggregate fit: this is the statistical price of the semiparametri
 flexibility, and the reason a parsimonious sieve (small $L$) or a regularized
 $\gamma$ is preferable unless the data are rich.
 
+\paragraph{An orthonormal sieve basis.} Part of the conditioning above is an
+artifact of the monomial (power-series) parametrization rather than the data: the
+shape monomials $\{\xi^3,\dots,\xi^L\}$ have a Hilbert-type Gram matrix on $[0,1]$,
+the textbook ill-conditioning of power-series sieves. We therefore also offer a
+\emph{fixed} orthonormal parametrization: orthonormalize the shape subspace in
+$L^2([0,1])$ (within $\mathrm{span}\{\xi^3,\dots,\xi^L\}$, so the quadratic baseline
+is untouched) and parametrize $\gamma = T c$ for a constant invertible $T$. Because
+$T$ is a fixed linear map applied only at the estimator boundary -- the forward
+solver still receives monomial $\gamma$ -- the falling-factorial U-statistics and
+the loss are unchanged and the debiased score merely pulls back by $T^\top$, so
+\emph{the debiasing is preserved exactly}: at $\theta_0$ the debiased score remains
+mean-zero in the orthonormal basis (the naive plug-in stays biased), as in the
+score experiment above, and the Bernstein convexity set carries over as the
+polyhedron $\{(MT)c \ge -1\}$. The reparametrization sharply improves the sieve
+conditioning: the $\gamma$-block condition number falls from $\approx 3.7\times10^3$
+(monomial) to $\approx 50$ (orthonormal), a $\sim\!70\times$ reduction, confirming
+that most of the monomial conditioning was basis-induced and removable. The honest
+caveat is that the well-identified object is then the \emph{function} (equivalently,
+the orthonormal coefficients $c$); the individual \emph{monomial} coefficients
+$\gamma_l$ remain weakly identified, because mapping back inflates their variance,
+$\operatorname{Var}(\hat\gamma) = T\operatorname{Var}(\hat c)\,T^\top$ -- the
+intrinsic, representation-dependent part of the limit. The orthonormal basis is thus
+the right space in which to estimate and report the sieve; it does not manufacture
+identification of the power-series coefficients that the flow support cannot resolve.
+
 \paragraph{The choice of $\Gamma$.} The parametrization of $\Gamma$ also
 matters when the truth has negative curvature corrections. With
 $\gamma_0=(0.8,-0.3)$ (in the Bernstein polyhedron $\Gamma_B$ but outside
