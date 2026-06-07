@@ -16,10 +16,10 @@ import argparse
 
 import numpy as np
 
-from purcsolver import PUMProblem, SSNConfig
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.perturbations import get_perturbation
-from purcsolver.solvers import RegularizedSSNSolver
+from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.perturbations import get_perturbation
+from purc.static_purc.solvers import RegularizedSSNSolver
 from tntp import load_net
 
 DATA = "/Users/ruiyao/Library/CloudStorage/Dropbox/Technion/Codes/LaplacianSolve/examples/data/"

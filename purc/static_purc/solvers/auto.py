@@ -34,16 +34,16 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
-from . import SOLVERS
-from .barrier_ipm import BarrierContinuationSolver
-from .base import ForwardSolver
-from .ipm import IPMSolver
-from .ssn import RegularizedSSNSolver
 from ..config import SSNConfig
 from ..problem import PUMProblem
 from ..result import PURCResult
 from ..utils.logging import get_logger
 from ..utils.typing import ArrayLike
+from . import SOLVERS
+from .barrier_ipm import BarrierContinuationSolver
+from .base import ForwardSolver
+from .ipm import IPMSolver
+from .ssn import RegularizedSSNSolver
 
 _logger = get_logger(__name__)
 
@@ -65,6 +65,7 @@ class AutoSolver(ForwardSolver):
 
     Args:
         config: Solver configuration shared by the underlying engines.
+
     """
 
     def __init__(self, config: Optional[SSNConfig] = None) -> None:
@@ -118,6 +119,38 @@ class AutoSolver(ForwardSolver):
         res = self._engine.solve(theta, b=b, lam0=lam0)
         if not res.success:
             res = self._run_fallback(theta, b=b, lam0=lam0)
+        res.extras.setdefault("regime", self.regime)
+        return res
+
+    def solve_batch(
+        self,
+        theta: Tuple[ArrayLike, ArrayLike],
+        b_batch: ArrayLike,
+        *,
+        lam0: Optional[ArrayLike] = None,
+    ) -> PURCResult:
+        """
+        Solve a batch of OD-pairs with the regime engine.
+
+        Routes to the same engine chosen at :meth:`preprocess` -- the batched IPM
+        for box-saturating kernels, the batched dual SSN for Legendre kernels --
+        each of which vectorizes the solve over the ``B`` systems natively.
+
+        Args:
+            theta: ``(beta, gamma)`` shared by all systems.
+            b_batch: Per-system demands, shape ``[B, k]``.
+            lam0: Optional warm-start multipliers ``[B, k]``.
+
+        Returns:
+            The batched forward-solve result, tagged with ``extras["regime"]``.
+
+        Raises:
+            RuntimeError: If :meth:`preprocess` has not been called.
+
+        """
+        if self._engine is None or self._problem is None:
+            raise RuntimeError("call preprocess(problem) before solve_batch()")
+        res = self._engine.solve_batch(theta, b_batch, lam0=lam0)
         res.extras.setdefault("regime", self.regime)
         return res
 

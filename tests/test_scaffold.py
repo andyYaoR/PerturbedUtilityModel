@@ -11,9 +11,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import purcsolver
-from purcsolver import PUMProblem, PURCResult, SSNConfig
-from purcsolver.result import STATUS_CONVERGED, STATUS_MAX_ITER
+import purc.static_purc as purcsolver
+from purc.static_purc import PUMProblem, PURCResult, SSNConfig
+from purc.static_purc.result import STATUS_CONVERGED, STATUS_MAX_ITER
 
 
 def test_package_imports_and_version():
@@ -99,7 +99,7 @@ def test_native_available_is_bool():
 def test_native_axpy_gil_released_smoke():
     if not purcsolver.native_available():
         pytest.skip("native core not built")
-    from purcsolver.utils.native import native_core
+    from purc.static_purc.utils.native import native_core
 
     core = native_core()
     x = np.arange(5, dtype=np.float64)

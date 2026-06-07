@@ -14,11 +14,11 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from purcsolver import PUMProblem, SSNConfig
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.perturbations import get_perturbation
-from purcsolver.solvers import RegularizedSSNSolver
-from purcsolver.utils.torch_compat import to_numpy
+from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.perturbations import get_perturbation
+from purc.static_purc.solvers import RegularizedSSNSolver
+from purc.static_purc.utils.torch_compat import to_numpy
 
 
 def _bidirectional_grid(side=5):

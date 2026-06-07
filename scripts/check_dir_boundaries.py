@@ -3,7 +3,7 @@
 Pre-commit hook: enforce directory boundary rules.
 
 Mirrors the equivalent hook in the PUM / LaplacianSolve packages.  It keeps
-native source under ``src/purcsolver/`` restricted to C/C++/CUDA files and
+native source under ``src/purc/static_purc/`` restricted to C/C++/CUDA files and
 prevents committing CMake / compiled build artifacts anywhere in the tree.
 Exit code 0 = pass, 1 = violations found.
 """
@@ -44,8 +44,8 @@ def check(condition: bool, msg: str) -> None:
         violations.append(msg)
 
 
-# 1. src/purcsolver/ should only contain native source + CMakeLists.
-native_src = ROOT / "src" / "purcsolver"
+# 1. src/purc/static_purc/ should only contain native source + CMakeLists.
+native_src = ROOT / "src" / "purc" / "static_purc"
 if native_src.exists():
     for f in native_src.rglob("*"):
         if f.is_file():

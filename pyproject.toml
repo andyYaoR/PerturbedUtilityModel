@@ -6,9 +6,9 @@ requires = ["scikit-build-core>=0.10.0", "nanobind>=2.1.0"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "purcsolver"
+name = "purc"
 version = "0.0.0"
-description = "Perturbed utility models with general polytope constraints, solved by a regularized semismooth Newton method."
+description = "Perturbed utility route-choice models: forward solvers (interior-point / semismooth Newton) and a debiased Fenchel-Young estimator over general polytope constraints."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -45,11 +45,11 @@ dev = [
 ]
 
 [tool.scikit-build]
-# The C++ core lives under src/purcsolver and installs into the Python package
-# directory; the pure-Python package is copied verbatim.
-cmake.source-dir = "src/purcsolver"
-wheel.install-dir = "purcsolver"
-wheel.packages = ["purcsolver"]
+# The C++ core lives under src/purc/static_purc and installs into the
+# static_purc package directory; the pure-Python umbrella package is copied verbatim.
+cmake.source-dir = "src/purc/static_purc"
+wheel.install-dir = "purc/static_purc"
+wheel.packages = ["purc"]
 cmake.build-type = "Release"
 # Re-run CMake automatically on editable-install imports when sources change.
 editable.rebuild = true

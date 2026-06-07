@@ -7,15 +7,15 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from purcsolver import PUMProblem
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.perturbations import get_perturbation
-from purcsolver.solvers.barrier import (
+from purc.static_purc import PUMProblem
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.perturbations import get_perturbation
+from purc.static_purc.solvers.barrier import (
     BarrierRecoveryConfig,
     barrier_dual_objective,
     recover_barrier_primal,
 )
-from purcsolver.utils.torch_compat import as_tensor
+from purc.static_purc.utils.torch_compat import as_tensor
 
 
 def _problem(kernel: str) -> tuple[PUMProblem, torch.Tensor, torch.Tensor]:

@@ -14,12 +14,12 @@ import numpy as np
 import scipy.sparse as sp
 import torch
 
-from purcsolver import PUMProblem, SSNConfig
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.perturbations import get_perturbation
-from purcsolver.solvers import RegularizedSSNSolver
-from purcsolver.utils.sparse import detect_incidence
-from purcsolver.utils.torch_compat import to_numpy
+from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.perturbations import get_perturbation
+from purc.static_purc.solvers import RegularizedSSNSolver
+from purc.static_purc.utils.sparse import detect_incidence
+from purc.static_purc.utils.torch_compat import to_numpy
 
 # 4-node network with a cycle, single OD flow 0 -> 3.
 CYCLE_INC = np.array(

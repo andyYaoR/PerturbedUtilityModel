@@ -1,7 +1,7 @@
 .PHONY: help lint format check-docs test test-native build clean
 
 # Python sources that the linters and docstring checkers police.
-PYSRC = purcsolver/
+PYSRC = purc/
 
 help:
 	@echo "Available commands:"

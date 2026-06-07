@@ -84,6 +84,12 @@ class CSCAssembler:
             [slot_of[(int(r), int(c))] for r, c in zip(rows_a, cols_a)], dtype=np.int64
         )
         self._diag_slot = np.asarray([slot_of[(j, j)] for j in range(k)], dtype=np.int64)
+        # Scatter map ``[nnz, M]`` so a whole batch assembles as one sparse matmul:
+        # ``values[B, nnz] = (Smap @ contrib[B, M].T).T`` with ``contrib = coeff * w[srci]``.
+        m = self._coeff.size
+        self._scatter = sp.csr_matrix(
+            (np.ones(m), (self._slot, np.arange(m))), shape=(self.nnz, m)
+        )
 
     def assemble_values(self, w: np.ndarray, eps: float) -> np.ndarray:
         """
@@ -109,6 +115,29 @@ class CSCAssembler:
         data = np.bincount(self._slot, weights=self._coeff * w[self._srci], minlength=self.nnz)
         data[self._diag_slot] += eps
         return data
+
+    def assemble_values_batch(self, w: np.ndarray, eps: np.ndarray) -> np.ndarray:
+        """
+        Assemble the CSC value arrays for a whole batch in one vectorized scatter.
+
+        For ``B`` systems sharing the pattern, computes ``values[B, nnz]`` via a
+        single sparse matmul (``self._scatter @ contrib.T``) rather than ``B``
+        per-system scatters -- the fast path for the batched general solve.
+
+        Args:
+            w: Per-system weights ``[B, N]``.
+            eps: Per-system diagonal regularizers ``[B]``.
+
+        Returns:
+            The ``[B, nnz]`` value arrays aligned to :attr:`indices` / :attr:`indptr`.
+
+        """
+        w = np.ascontiguousarray(w, dtype=float)
+        contrib = self._coeff[None, :] * w[:, self._srci]  # [B, M]
+        out = (self._scatter @ contrib.T).T  # [B, nnz]
+        out = np.ascontiguousarray(out)
+        out[:, self._diag_slot] += np.asarray(eps, dtype=float)[:, None]
+        return out
 
     def assemble(self, w: np.ndarray, eps: float) -> sp.csc_matrix:
         """

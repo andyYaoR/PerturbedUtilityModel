@@ -18,7 +18,7 @@ def _configure_base_logger() -> logging.Logger:
     Attach a single stream handler to the root logger (idempotently).
 
     Returns:
-        The base ``"purcsolver"`` logger.
+        The base ``"purc"`` logger.
 
     """
     root_logger = logging.getLogger()
@@ -28,7 +28,7 @@ def _configure_base_logger() -> logging.Logger:
         handler.setLevel(logging.INFO)
         handler.setFormatter(logging.Formatter(_DEFAULT_FORMAT))
         root_logger.addHandler(handler)
-    return logging.getLogger("purcsolver")
+    return logging.getLogger("purc")
 
 
 logger = _configure_base_logger()

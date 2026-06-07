@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(purcsolver_native LANGUAGES CXX)
+project(static_purc_native LANGUAGES CXX)
 
 # ── Language standard / options ─────────────────────────────────────
 set(CMAKE_CXX_STANDARD 17)
@@ -28,21 +28,21 @@ find_package(nanobind CONFIG REQUIRED)
 # full GIL-released SSN step) live in header-only templated form alongside the
 # binding TU.  M0 ships only the binding + a GIL-release smoke kernel to prove
 # the end-to-end build path; numerical kernels land in M1+.
-nanobind_add_module(_purcsolver_core nb_core_module.cpp)
-target_include_directories(_purcsolver_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+nanobind_add_module(_static_purc_core nb_core_module.cpp)
+target_include_directories(_static_purc_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Aggressive optimization for the hot kernels.  -march=native targets the build
 # machine (fine for local research use; disable for portable wheels).
 option(PURCSOLVER_NATIVE_ARCH "Optimize for the build machine's CPU" ON)
 if(NOT MSVC)
-  target_compile_options(_purcsolver_core PRIVATE -O3 -funroll-loops)
+  target_compile_options(_static_purc_core PRIVATE -O3 -funroll-loops)
   if(PURCSOLVER_NATIVE_ARCH)
     include(CheckCXXCompilerFlag)
     check_cxx_compiler_flag("-march=native" _PS_HAS_MARCH_NATIVE)
     if(_PS_HAS_MARCH_NATIVE)
-      target_compile_options(_purcsolver_core PRIVATE -march=native)
+      target_compile_options(_static_purc_core PRIVATE -march=native)
     endif()
   endif()
 endif()
 
-install(TARGETS _purcsolver_core LIBRARY DESTINATION .)
+install(TARGETS _static_purc_core LIBRARY DESTINATION .)

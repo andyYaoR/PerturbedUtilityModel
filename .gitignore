@@ -46,6 +46,17 @@ docs/sphinx/_build/
 .idea/
 .DS_Store
 
+# LaTeX build artifacts (root paper; figures/*.pdf are tracked)
+/paper.aux
+/paper.bbl
+/paper.blg
+/paper.fdb_latexmk
+/paper.fls
+/paper.log
+/paper.out
+/paper.pdf
+/paper.synctex.gz
+
 # Agent / local
 CLAUDE.md
 .claude/settings.local.json

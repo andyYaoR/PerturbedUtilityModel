@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace nb = nanobind;
@@ -30,6 +31,8 @@ using Int64Arr1D =
     nb::ndarray<nb::numpy, const int64_t, nb::ndim<1>, nb::device::cpu, nb::c_contig>;
 using Uint8MutArr1D =
     nb::ndarray<nb::numpy, uint8_t, nb::ndim<1>, nb::device::cpu, nb::c_contig>;
+using Uint8Arr1D =
+    nb::ndarray<nb::numpy, const uint8_t, nb::ndim<1>, nb::device::cpu, nb::c_contig>;
 
 namespace {
 
@@ -248,9 +251,166 @@ void recover_barrier_f64(int64_t kernel, Float64Arr1D coeffs, Float64Arr1D ell,
   }
 }
 
+// Per-system complementarity mu and centrality ratio cr over a trial (xt,zt,wt)
+// row of length n: mu = (sum xt*zt + (1-xt)*wt)/(2n); cr = min_i product_i / mu.
+static inline void mu_cr_row(const double* xt, const double* zt, const double* wt,
+                             int64_t n, double& mu_out, double& cr_out) {
+  double sump = 0.0;
+  double pmin = std::numeric_limits<double>::infinity();
+  for (int64_t i = 0; i < n; ++i) {
+    const double pz = xt[i] * zt[i];
+    const double pw = (1.0 - xt[i]) * wt[i];
+    sump += pz + pw;
+    if (pz < pmin) pmin = pz;
+    if (pw < pmin) pmin = pw;
+  }
+  const double mu = sump / (2.0 * static_cast<double>(n));
+  mu_out = mu;
+  cr_out = (mu > 0.0) ? pmin / mu : 0.0;
+}
+
+// Fused fast-step backtracking (the batched IPM safeguard, the rho-decrease arm).
+// Mirrors the torch tau-schedule loop exactly: from the FROZEN base (x,z,w,lam)
+// and corrector directions, find per OD the largest tau in {1, chi, chi^2, ...}
+// (<= ls_max trials) at which the trial point first satisfies mu(tau) <= rho*mu and
+// centrality cr >= gamma_min, accept+freeze it, and leave already-done systems
+// (the converged ones, via done_in) untouched.  Outputs xf,zf,wf,lamf are written
+// from the base and updated only on acceptance; done_out flags the accepted set.
+void ipm_fast_backtrack_f64(Float64Arr1D x, Float64Arr1D z, Float64Arr1D w,
+                            Float64Arr1D lam, Float64Arr1D dx, Float64Arr1D dz,
+                            Float64Arr1D dw, Float64Arr1D dlam,
+                            Float64Arr1D ap_max, Float64Arr1D ad_max,
+                            Float64Arr1D mu, Uint8Arr1D done_in, double rho,
+                            double gamma_min, double chi, int64_t ls_max, int64_t B,
+                            int64_t N, int64_t k, Float64MutArr1D xf,
+                            Float64MutArr1D zf, Float64MutArr1D wf,
+                            Float64MutArr1D lamf, Uint8MutArr1D done_out) {
+  const double* xp = x.data();   const double* zp = z.data();
+  const double* wp = w.data();   const double* lamp = lam.data();
+  const double* dxp = dx.data(); const double* dzp = dz.data();
+  const double* dwp = dw.data(); const double* dlamp = dlam.data();
+  const double* apm = ap_max.data(); const double* adm = ad_max.data();
+  const double* mup = mu.data();     const uint8_t* din = done_in.data();
+  double* xfo = xf.data(); double* zfo = zf.data(); double* wfo = wf.data();
+  double* lfo = lamf.data(); uint8_t* dout = done_out.data();
+
+  nb::gil_scoped_release release;
+  for (int64_t b = 0; b < B; ++b) {
+    dout[b] = din[b];
+    for (int64_t i = 0; i < N; ++i) {
+      xfo[b * N + i] = xp[b * N + i];
+      zfo[b * N + i] = zp[b * N + i];
+      wfo[b * N + i] = wp[b * N + i];
+    }
+    for (int64_t i = 0; i < k; ++i) lfo[b * k + i] = lamp[b * k + i];
+  }
+  std::vector<double> xt(static_cast<std::size_t>(N));
+  std::vector<double> zt(static_cast<std::size_t>(N));
+  std::vector<double> wt(static_cast<std::size_t>(N));
+  double tau = 1.0;
+  for (int64_t it = 0; it < ls_max; ++it) {
+    bool all_done = true;
+    for (int64_t b = 0; b < B; ++b) {
+      if (dout[b]) continue;
+      const double ap = tau * apm[b], ad = tau * adm[b];
+      const double* xb = xp + b * N; const double* zb = zp + b * N;
+      const double* wb = wp + b * N; const double* dxb = dxp + b * N;
+      const double* dzb = dzp + b * N; const double* dwb = dwp + b * N;
+      for (int64_t i = 0; i < N; ++i) {
+        xt[i] = xb[i] + ap * dxb[i];
+        zt[i] = zb[i] + ad * dzb[i];
+        wt[i] = wb[i] + ad * dwb[i];
+      }
+      double mut, cr;
+      mu_cr_row(xt.data(), zt.data(), wt.data(), N, mut, cr);
+      const bool ok = (mut <= rho * mup[b]) && (cr >= gamma_min);
+      if (ok) {
+        for (int64_t i = 0; i < N; ++i) {
+          xfo[b * N + i] = xt[i]; zfo[b * N + i] = zt[i]; wfo[b * N + i] = wt[i];
+        }
+        for (int64_t i = 0; i < k; ++i)
+          lfo[b * k + i] = lamp[b * k + i] + ad * dlamp[b * k + i];
+        dout[b] = 1;
+      } else {
+        all_done = false;
+      }
+    }
+    if (all_done) break;
+    tau *= chi;
+  }
+}
+
+// Fused safe-step backtracking (the Armijo arm of the safeguard).  Mirrors the
+// torch loop: from the base and the centred safe directions, update every still
+// pending OD to the LATEST trial each tau (not only on acceptance), and accept when
+// mu(tau) <= (1 - kappa*tau*(1-sigma_s))*mu and cr >= gamma_min.  Systems flagged
+// done_in (those that do NOT need a safe step) are left at the base.
+void ipm_safe_backtrack_f64(Float64Arr1D x, Float64Arr1D z, Float64Arr1D w,
+                            Float64Arr1D lam, Float64Arr1D dxs, Float64Arr1D dzs,
+                            Float64Arr1D dws, Float64Arr1D dlams,
+                            Float64Arr1D ap_s, Float64Arr1D ad_s, Float64Arr1D mu,
+                            Float64Arr1D sigma_s, Uint8Arr1D done_in, double kappa,
+                            double gamma_min, double chi, int64_t ls_max, int64_t B,
+                            int64_t N, int64_t k, Float64MutArr1D xs,
+                            Float64MutArr1D zs, Float64MutArr1D ws,
+                            Float64MutArr1D lams, Uint8MutArr1D done_out) {
+  const double* xp = x.data();   const double* zp = z.data();
+  const double* wp = w.data();   const double* lamp = lam.data();
+  const double* dxp = dxs.data(); const double* dzp = dzs.data();
+  const double* dwp = dws.data(); const double* dlamp = dlams.data();
+  const double* apm = ap_s.data(); const double* adm = ad_s.data();
+  const double* mup = mu.data();   const double* sig = sigma_s.data();
+  const uint8_t* din = done_in.data();
+  double* xso = xs.data(); double* zso = zs.data(); double* wso = ws.data();
+  double* lso = lams.data(); uint8_t* dout = done_out.data();
+
+  nb::gil_scoped_release release;
+  for (int64_t b = 0; b < B; ++b) {
+    dout[b] = din[b];
+    for (int64_t i = 0; i < N; ++i) {
+      xso[b * N + i] = xp[b * N + i];
+      zso[b * N + i] = zp[b * N + i];
+      wso[b * N + i] = wp[b * N + i];
+    }
+    for (int64_t i = 0; i < k; ++i) lso[b * k + i] = lamp[b * k + i];
+  }
+  std::vector<double> xt(static_cast<std::size_t>(N));
+  std::vector<double> zt(static_cast<std::size_t>(N));
+  std::vector<double> wt(static_cast<std::size_t>(N));
+  double tau = 1.0;
+  for (int64_t it = 0; it < ls_max; ++it) {
+    bool all_done = true;
+    for (int64_t b = 0; b < B; ++b) {
+      if (dout[b]) continue;
+      const double ap = tau * apm[b], ad = tau * adm[b];
+      const double* xb = xp + b * N; const double* zb = zp + b * N;
+      const double* wb = wp + b * N; const double* dxb = dxp + b * N;
+      const double* dzb = dzp + b * N; const double* dwb = dwp + b * N;
+      for (int64_t i = 0; i < N; ++i) {
+        xt[i] = xb[i] + ap * dxb[i];
+        zt[i] = zb[i] + ad * dzb[i];
+        wt[i] = wb[i] + ad * dwb[i];
+      }
+      // Update on pending (the latest trial), then test Armijo acceptance.
+      for (int64_t i = 0; i < N; ++i) {
+        xso[b * N + i] = xt[i]; zso[b * N + i] = zt[i]; wso[b * N + i] = wt[i];
+      }
+      for (int64_t i = 0; i < k; ++i)
+        lso[b * k + i] = lamp[b * k + i] + ad * dlamp[b * k + i];
+      double mut, cr;
+      mu_cr_row(xt.data(), zt.data(), wt.data(), N, mut, cr);
+      const bool armijo = mut <= (1.0 - kappa * tau * (1.0 - sig[b])) * mup[b];
+      const bool ok = armijo && (cr >= gamma_min);
+      if (ok) dout[b] = 1; else all_done = false;
+    }
+    if (all_done) break;
+    tau *= chi;
+  }
+}
+
 }  // namespace
 
-NB_MODULE(_purcsolver_core, m) {
+NB_MODULE(_static_purc_core, m) {
   m.doc() = "PURCSolver native core (GIL-released hot-path kernels).";
   m.attr("__core_version__") = "0.1.0";
   m.def("axpy_f64", &axpy_f64, "a"_a, "x"_a, "y"_a,
@@ -270,4 +430,14 @@ NB_MODULE(_purcsolver_core, m) {
         "x_out"_a, "w_out"_a, "max_iter"_a = 80, "xtol"_a = 1e-13,
         "Per-coordinate barrier-smoothed primal recovery x and weight 1/q' "
         "(GIL released); kernel 0=quad 1=entropy 2=logit 3=mod-entropy 4=sieve.");
+  m.def("ipm_fast_backtrack_f64", &ipm_fast_backtrack_f64, "x"_a, "z"_a, "w"_a,
+        "lam"_a, "dx"_a, "dz"_a, "dw"_a, "dlam"_a, "ap_max"_a, "ad_max"_a, "mu"_a,
+        "done_in"_a, "rho"_a, "gamma_min"_a, "chi"_a, "ls_max"_a, "B"_a, "N"_a,
+        "k"_a, "xf"_a, "zf"_a, "wf"_a, "lamf"_a, "done_out"_a,
+        "Fused batched IPM fast-step backtracking (rho-decrease arm, GIL released).");
+  m.def("ipm_safe_backtrack_f64", &ipm_safe_backtrack_f64, "x"_a, "z"_a, "w"_a,
+        "lam"_a, "dxs"_a, "dzs"_a, "dws"_a, "dlams"_a, "ap_s"_a, "ad_s"_a, "mu"_a,
+        "sigma_s"_a, "done_in"_a, "kappa"_a, "gamma_min"_a, "chi"_a, "ls_max"_a,
+        "B"_a, "N"_a, "k"_a, "xs"_a, "zs"_a, "ws"_a, "lams"_a, "done_out"_a,
+        "Fused batched IPM safe-step backtracking (Armijo arm, GIL released).");
 }

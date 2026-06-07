@@ -20,17 +20,17 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from purcsolver import PUMProblem, SSNConfig
-from purcsolver.backends.routing import LaplacianBackend
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.perturbations import get_perturbation
-from purcsolver.solvers.barrier import (
+from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc.backends.routing import LaplacianBackend
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.perturbations import get_perturbation
+from purc.static_purc.solvers.barrier import (
     BarrierRecoveryConfig,
     barrier_dual_objective,
     recover_barrier_primal,
 )
-from purcsolver.solvers import RegularizedSSNSolver
-from purcsolver.utils.torch_compat import as_tensor
+from purc.static_purc.solvers import RegularizedSSNSolver
+from purc.static_purc.utils.torch_compat import as_tensor
 from tntp import load_net
 
 DATA = "/Users/ruiyao/Library/CloudStorage/Dropbox/Technion/Codes/LaplacianSolve/examples/data/"

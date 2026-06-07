@@ -1,7 +1,7 @@
 """
 Lazy access to the compiled native core extension.
 
-Keeps a single cached handle to ``purcsolver._purcsolver_core`` and raises a
+Keeps a single cached handle to ``purc.static_purc._static_purc_core`` and raises a
 clear, actionable error when the extension has not been built (rather than
 failing obscurely at first use).  Mirrors LaplacianSolve's ``_loader`` and PUM's
 ``native_choice`` patterns.
@@ -33,7 +33,7 @@ def native_core() -> ModuleType:
     Import and cache the native core module.
 
     Returns:
-        The ``purcsolver._purcsolver_core`` extension module.
+        The ``purc.static_purc._static_purc_core`` extension module.
 
     Raises:
         NativeUnavailableError: If the compiled extension is not present.
@@ -42,7 +42,7 @@ def native_core() -> ModuleType:
     global _core
     if _core is None:
         try:
-            _core = importlib.import_module("purcsolver._purcsolver_core")
+            _core = importlib.import_module("purc.static_purc._static_purc_core")
         except ImportError as exc:  # pragma: no cover - exercised only when unbuilt
             raise NativeUnavailableError(
                 "The PURCSolver native core is not built. Install the package in "

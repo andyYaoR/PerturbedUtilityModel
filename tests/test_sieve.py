@@ -16,15 +16,15 @@ import scipy.sparse as sp
 import sympy as sp_sym
 import torch
 
-from purcsolver import PUMProblem, SSNConfig
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.oracle import solve_scipy
-from purcsolver.perturbations import get_perturbation
-from purcsolver.perturbations._bernstein import bernstein_coeffs, is_convex
-from purcsolver.perturbations.compiler import SymbolicPerturbation, compile_kernel
-from purcsolver.perturbations.polynomial_sieve import PolynomialSievePerturbation
-from purcsolver.solvers import RegularizedSSNSolver
-from purcsolver.utils.torch_compat import to_numpy
+from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.oracle import solve_scipy
+from purc.static_purc.perturbations import get_perturbation
+from purc.static_purc.perturbations._bernstein import bernstein_coeffs, is_convex
+from purc.static_purc.perturbations.compiler import SymbolicPerturbation, compile_kernel
+from purc.static_purc.perturbations.polynomial_sieve import PolynomialSievePerturbation
+from purc.static_purc.solvers import RegularizedSSNSolver
+from purc.static_purc.utils.torch_compat import to_numpy
 
 FEASIBLE_GAMMAS = [[0.5], [0.3, 0.2], [0.1, 0.05, 0.02], [0.2, 0.0, 0.1, 0.05], [-0.4]]
 INFEASIBLE_GAMMAS = [[-2.0], [0.0, -3.0]]

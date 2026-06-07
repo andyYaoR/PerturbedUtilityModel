@@ -47,10 +47,6 @@ from typing import Optional, Tuple
 
 import torch
 
-from . import SOLVERS
-from .barrier import BarrierRecoveryConfig, barrier_dual_objective, recover_barrier_primal
-from .base import ForwardSolver
-from .ssn import RegularizedSSNSolver
 from ..backends.routing import LaplacianBackend
 from ..config import SSNConfig
 from ..problem import PUMProblem
@@ -58,6 +54,10 @@ from ..result import STATUS_CONVERGED, STATUS_MAX_ITER, PURCResult
 from ..utils.logging import get_logger
 from ..utils.torch_compat import DEFAULT_DTYPE, as_tensor
 from ..utils.typing import ArrayLike
+from . import SOLVERS
+from .barrier import BarrierRecoveryConfig, barrier_dual_objective, recover_barrier_primal
+from .base import ForwardSolver
+from .ssn import RegularizedSSNSolver
 
 _logger = get_logger(__name__)
 
@@ -90,6 +90,7 @@ class BarrierContinuationSolver(ForwardSolver):
         crossover: If ``True``, polish with the exact box SSN warm-started at the
             barrier multipliers.
         recovery_config: Controls for the per-coordinate barrier root-find.
+
     """
 
     def __init__(

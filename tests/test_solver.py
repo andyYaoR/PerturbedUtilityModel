@@ -17,14 +17,14 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from purcsolver import PUMProblem, SSNConfig
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.perturbations import get_perturbation
-from purcsolver.solvers import RegularizedSSNSolver
-from purcsolver.utils.torch_compat import to_numpy
+from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.perturbations import get_perturbation
+from purc.static_purc.solvers import RegularizedSSNSolver
+from purc.static_purc.utils.torch_compat import to_numpy
 
 cvxpy = pytest.importorskip("cvxpy")
-from purcsolver.oracle import solve_cvxpy  # noqa: E402
+from purc.static_purc.oracle import solve_cvxpy  # noqa: E402
 
 KERNELS = ["quadratic", "entropy", "logit_entropy", "modified_entropy"]
 NO_GAMMA = torch.zeros(0, dtype=torch.float64)

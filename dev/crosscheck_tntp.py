@@ -33,11 +33,11 @@ import time
 import numpy as np
 import scipy.sparse.csgraph as csg
 
-from purcsolver import PUMProblem, SSNConfig
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.perturbations import get_perturbation
-from purcsolver.solvers import get_solver
-from purcsolver.utils.torch_compat import to_numpy
+from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.perturbations import get_perturbation
+from purc.static_purc.solvers import get_solver
+from purc.static_purc.utils.torch_compat import to_numpy
 from tntp import load_net
 
 import cvxpy as cp  # noqa: E402

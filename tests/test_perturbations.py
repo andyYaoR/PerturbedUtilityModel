@@ -20,8 +20,8 @@ import numpy as np
 import pytest
 import torch
 
-from purcsolver.perturbations import PERTURBATIONS, get_perturbation
-from purcsolver.utils.torch_compat import to_numpy
+from purc.static_purc.perturbations import PERTURBATIONS, get_perturbation
+from purc.static_purc.utils.torch_compat import to_numpy
 
 CLOSED_FORM = ["quadratic", "entropy", "logit_entropy", "modified_entropy"]
 

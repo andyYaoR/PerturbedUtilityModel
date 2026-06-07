@@ -47,7 +47,7 @@ __all__ = [
 
 # Import concrete solvers for their registration side effects (kept at the
 # bottom so SOLVERS / ForwardSolver are defined before the solvers import them).
-from .ssn import RegularizedSSNSolver  # noqa: E402
-from .ipm import IPMSolver  # noqa: E402
-from .barrier_ipm import BarrierContinuationSolver  # noqa: E402
 from .auto import AutoSolver  # noqa: E402
+from .barrier_ipm import BarrierContinuationSolver  # noqa: E402
+from .ipm import IPMSolver  # noqa: E402
+from .ssn import RegularizedSSNSolver  # noqa: E402

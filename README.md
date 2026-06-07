@@ -47,7 +47,7 @@ local Q-quadratic convergence; an Armijo line search on the dual globalizes it.
 | `solvers/` | The `RegularizedSSNSolver` and the `ForwardSolver` interface (build-once `preprocess`, cheap repeatable `solve` — estimation-aware: warm starts + batched OD-pairs). |
 | `backends/` | Routes the fixed-pattern Newton system to the right LaplacianSolve solver, built once and solved many times. |
 | `oracle/` | CVXPY and independent scipy reference solvers for correctness tests. |
-| `native/` (`src/purcsolver/`) | nanobind C++ kernels for the hot path — vectorized `ξ*(η)`, fused weight/CSC assembly, and a full GIL-released SSN step. A pure-numpy fallback is kept for parity testing. |
+| `native/` (`src/purc/static_purc/`) | nanobind C++ kernels for the hot path — vectorized `ξ*(η)`, fused weight/CSC assembly, and a full GIL-released SSN step. A pure-numpy fallback is kept for parity testing. |
 
 ## Status
 
@@ -73,10 +73,10 @@ runtime-codegen path, cross-checked for performance (v0.3.0). See the staged pla
 
 ```python
 import torch, numpy as np, scipy.sparse as sp
-from purcsolver import PUMProblem, SSNConfig
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.perturbations import get_perturbation
-from purcsolver.solvers import RegularizedSSNSolver
+from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.perturbations import get_perturbation
+from purc.static_purc.solvers import RegularizedSSNSolver
 
 A = sp.csr_matrix(np.ones((1, 5)))          # sum(x) = 1
 poly = GeneralPolytope(A, b=torch.tensor([1.0]), lo=0.0, hi=1.0)

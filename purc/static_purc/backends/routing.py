@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+import numpy as np
 import torch
 
 from ..constraints.base import Polytope
@@ -52,6 +53,7 @@ class LaplacianBackend:
         opts = dict(laplacian_options or {})
         self.k = polytope.num_constraints
         self._solver = None  # general path: built lazily on first solve
+        self._batched = None  # general path: BatchedSDDMSolver, built lazily on first batch
         self._prep: Optional[tuple] = None  # PURC path: cached (w, eps) for solve_prepared
 
         purc = None
@@ -208,8 +210,11 @@ class LaplacianBackend:
         Solve a batch of Newton systems (one per OD-pair) in one shot.
 
         For the incidence path this is a single GIL-released
-        ``PURCLaplacianSolver.solve_batch`` call; for the general path it loops
-        over systems (the network case is the common one for batching).
+        ``PURCLaplacianSolver.solve_batch`` call.  For the general path the
+        per-system CSC values (all sharing the cached pattern) are stacked and
+        handed to a single GIL-released ``BatchedSDDMSolver.solve_batch`` -- one
+        batched factorization+solve over the whole OD batch, not a Python loop of
+        per-system factorizations.
 
         Args:
             weights: Per-system per-coordinate weights ``[B, N]``.
@@ -223,6 +228,17 @@ class LaplacianBackend:
         if self.kind == "purc":
             res = self._purc.solve_batch(to_numpy(weights), eps=to_numpy(eps), rhs=to_numpy(rhs))
             return as_tensor(res["solution"])
-        # General path: solve each system (assemble + factorize per system).
-        rows = [self.solve(weights[b], float(eps[b]), rhs[b]) for b in range(rhs.shape[0])]
-        return torch.stack(rows, dim=0)
+        # General path: assemble per-system values at the fixed pattern, then one
+        # native batched solve.  M_b = A diag(w_b) A^T + eps_b I is SPD (eps_b > 0),
+        # so no grounding is needed and every system shares the assembler's pattern.
+        w_np = to_numpy(weights)  # [B, N]
+        eps_np = to_numpy(eps)  # [B]
+        rhs_np = to_numpy(rhs)  # [B, k]
+        values = self.assembler.assemble_values_batch(w_np, eps_np)  # [B, nnz], shared pattern
+        if self._batched is None:
+            from laplaciansolve import BatchedSDDMSolver, SolverConfig
+
+            m0 = self.assembler.assemble(w_np[0], float(eps_np[0]))
+            self._batched = BatchedSDDMSolver(m0, config=SolverConfig(**self._options))
+        sol = self._batched.solve_batch(values, rhs_np)  # [B, k]
+        return as_tensor(sol)

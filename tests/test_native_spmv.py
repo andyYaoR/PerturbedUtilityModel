@@ -14,10 +14,10 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-import purcsolver
-from purcsolver.constraints import GeneralPolytope
-from purcsolver.utils.spmv import CSRMatVec
-from purcsolver.utils.torch_compat import to_numpy
+import purc.static_purc as purcsolver
+from purc.static_purc.constraints import GeneralPolytope
+from purc.static_purc.utils.spmv import CSRMatVec
+from purc.static_purc.utils.torch_compat import to_numpy
 
 
 @pytest.mark.parametrize("shape", [(50, 120), (120, 50), (1, 7), (30, 30)])
@@ -34,7 +34,7 @@ def test_csrmatvec_matches_scipy(shape):
 def test_native_csr_spmv_kernel_bit_exact():
     if not purcsolver.native_available():
         pytest.skip("native core not built")
-    from purcsolver.utils.native import native_core
+    from purc.static_purc.utils.native import native_core
 
     rng = np.random.default_rng(1)
     A = sp.random(80, 200, density=0.05, random_state=2, format="csr")
