@@ -487,15 +487,11 @@ with the second-order targets
 \end{equation}
 which yield the corrector direction $\Delta=(\Delta x,\Delta\lambda,\Delta z,\Delta w)$.
 
-\paragraph{Globalization and convergence.} Fraction-to-boundary controls only
-positivity. It does not prevent one complementarity product from becoming tiny while
-other products remain large. Bare Mehrotra predictor--corrector methods are
-therefore not globally convergent in general \citep{salahi2007mehrotra}. We use the
-safe-step/fast-step globalization of \citet{wright1996superlinear,ralph2000superlinear},
-within the framework of \citet{kojima1994global}.
-
-For any strictly interior point $y=(x,\lambda,z,w)$, define its average
-complementarity by
+\paragraph{Globalization and convergence.} Fraction-to-boundary preserves
+positivity but not centrality. To globalize the Mehrotra step, we use the
+safe-step/fast-step line search of
+\citet{wright1996superlinear,ralph2000superlinear}, within the framework of
+\citet{kojima1994global}. For $y=(x,\lambda,z,w)$, define
 \begin{equation}\label{eq:mu-bar}
     \bar\mu(y)
     :=\bar\mu(x,z,w)
@@ -506,15 +502,13 @@ The wide central neighbourhood is
     \cN(\nu)=\bigl\{y=(x,\lambda,z,w):0<x<\mathbf 1,\ z,w>0,\
         \min_i\bigl(x_iz_i,\ (1-x_i)w_i\bigr)\ge\nu\,\bar\mu(y)\bigr\}.
 \end{equation}
-The average in~\eqref{eq:nbhd} is evaluated at the same point $y$. Thus membership
-means that no lower- or upper-bound product is too small relative to that point's
-own average.
+Thus $\cN(\nu)$ excludes strictly positive but badly unbalanced iterates; the
+average in~\eqref{eq:nbhd} is evaluated at the same point $y$.
 
-Now fix the current iterate
-$y_k=(x_k,\lambda_k,z_k,w_k)$ and write $\mu_k=\bar\mu(y_k)$. Given a search
-direction $\Delta$, let $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ be the standard
-fraction-to-boundary primal and dual step lengths, backed off by a fixed factor
-$\tau<1$. A common line-search multiplier $\alpha\in[0,1]$ gives
+At iteration $k$, let $y_k=(x_k,\lambda_k,z_k,w_k)$ and
+$\mu_k=\bar\mu(y_k)$. For a direction $\Delta$, let
+$(\alpha_{\mathrm p},\alpha_{\mathrm d})$ be the fraction-to-boundary primal and
+dual lengths. The trial point and its complementarity are
 \begin{equation}\label{eq:trial-point}
     x_k(\alpha)=x_k+\alpha\,\alpha_{\mathrm p}\,\Delta x,\qquad
     (\lambda_k,z_k,w_k)(\alpha)
@@ -526,24 +520,21 @@ with trial complementarity
     =\tfrac{1}{2n}\bigl[x_k(\alpha)^\top z_k(\alpha)
       +(\mathbf 1-x_k(\alpha))^\top w_k(\alpha)\bigr].
 \end{equation}
-Because $y_k(0)=y_k$, we have $\mu_k(0)=\mu_k$.
-
-The line search first tries the Mehrotra corrector direction and accepts the largest
-backtracked $\alpha$ satisfying
+The fast step takes the largest backtracked $\alpha$ along the Mehrotra corrector
+direction satisfying
 \begin{equation}\label{eq:fast-step}
     y_k(\alpha)\in\cN(\nu)\quad\text{and}\quad \mu_k(\alpha)\le\rho\,\mu_k.
 \end{equation}
-If this fast step fails, we recompute a centred safe direction with
-$\sigma_{\mathrm s}\in[\underline\sigma,\overline\sigma]\subset(0,1)$ and no
-second-order correction, and accept the largest backtracked $\alpha$ satisfying
+If this fails, the safe step recomputes a centred direction with
+$\sigma_{\mathrm s}\in[\underline\sigma,\overline\sigma]\subset(0,1)$, omits the
+second-order correction, and accepts the largest backtracked $\alpha$ satisfying
 \begin{equation}\label{eq:safe-step}
     y_k(\alpha)\in\cN(\nu)
     \quad\text{and}\quad
     \mu_k(\alpha)\le\bigl(1-\kappa\,\alpha\,(1-\sigma_{\mathrm s})\bigr)\mu_k.
 \end{equation}
-The safe step is the source of the global guarantee: its Armijo line search accepts
-a step length bounded away from zero
-\citep[Lemma~3.1]{wright1996superlinear}.
+The safe-step line search accepts a step length bounded away from zero
+\citep[Lemma~3.1]{wright1996superlinear}; this is the global progress guarantee.
 
 Finally, the initial point is scaled to the data. Set $x=\tfrac12\mathbf 1$ and
 $\lambda=0$. With $g=\ell\odot h'(\tfrac12\mathbf 1;\gamma)-v(\beta)$, choose
@@ -605,15 +596,15 @@ a generic conic solver for each OD subproblem.
     \State \emph{Predictor:} $\Delta^{\mathrm{aff}}\gets\textsc{Dir}\bigl(-x\odot z,\,-(\mathbf 1-x)\odot w\bigr)$; set $\mu_{\mathrm{aff}}$ to the affine fraction-to-boundary trial complementarity.
     \State Set $\sigma\gets(\mu_{\mathrm{aff}}/\mu)^3$.
     \State \emph{Corrector:} $\Delta\gets\textsc{Dir}(q_z,q_w)$ with $q_z,q_w$ from~\eqref{eq:mehrotra-rhs}.
-    \State Compute the primal and dual fraction-to-boundary lengths for $\Delta$.
-    \State \emph{Fast step:} let $\alpha^\star$ be the first value in $\{1,\chi,\chi^2,\ldots\}$ satisfying~\eqref{eq:fast-step}.
+    \State Compute fraction-to-boundary lengths for $\Delta$.
+    \State \emph{Fast step:} let $\alpha^\star$ be the first $\alpha\in\{1,\chi,\chi^2,\ldots\}$ satisfying~\eqref{eq:fast-step}, if any.
     \If{$\alpha^\star$ exists}
-        \State $(x,\lambda,z,w)\gets y_k(\alpha^\star)$. \Comment{bare Mehrotra step, taken when admissible}
+        \State $(x,\lambda,z,w)\gets y_k(\alpha^\star)$.
     \Else
-        \State \emph{Safe direction:} $\sigma_{\mathrm s}\gets\min(\overline\sigma,\max(\underline\sigma,\sigma))$ and
-        \Statex \quad $\Delta\gets\textsc{Dir}\bigl(\sigma_{\mathrm s}\mu\mathbf 1-x\odot z,\ \sigma_{\mathrm s}\mu\mathbf 1-(\mathbf 1-x)\odot w\bigr)$.
-        \State Recompute $(\alpha_{\mathrm p},\alpha_{\mathrm d})$ for this direction and backtrack $\alpha=1,\chi,\chi^2,\ldots$ until~\eqref{eq:safe-step} holds.
-        \State $(x,\lambda,z,w)\gets y_k(\alpha)$. \Comment{accepted step length is bounded below}
+        \State $\sigma_{\mathrm s}\gets\min(\overline\sigma,\max(\underline\sigma,\sigma))$.
+        \State $\Delta\gets\textsc{Dir}\bigl(\sigma_{\mathrm s}\mu\mathbf 1-x\odot z,\ \sigma_{\mathrm s}\mu\mathbf 1-(\mathbf 1-x)\odot w\bigr)$.
+        \State Recompute fraction-to-boundary lengths and backtrack until~\eqref{eq:safe-step} holds.
+        \State $(x,\lambda,z,w)\gets y_k(\alpha)$.
     \EndIf
 \EndFor
 \end{algorithmic}
