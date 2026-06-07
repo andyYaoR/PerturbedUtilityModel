@@ -534,7 +534,8 @@ second-order correction, and accepts the largest backtracked $\alpha$ satisfying
     \mu_k(\alpha)\le\bigl(1-\kappa\,\alpha\,(1-\sigma_{\mathrm s})\bigr)\mu_k.
 \end{equation}
 The safe-step line search accepts a step length bounded away from zero
-\citep[Lemma~3.1]{wright1996superlinear}; this is the global progress guarantee.
+\citep[Lemmas~3.1--3.2]{wright1996superlinear}; this is the global progress
+guarantee.
 
 Finally, the initial point is scaled to the data. Set $x=\tfrac12\mathbf 1$ and
 $\lambda=0$. With $g=\ell\odot h'(\tfrac12\mathbf 1;\gamma)-v(\beta)$, choose
@@ -559,10 +560,11 @@ $C\operatorname{diag}(\Theta)^{-1}C^\top$ is positive definite on the grounded
 space. Together with the assumed strict feasibility, these are the monotonicity,
 Slater, and nonsingular reduced-Newton conditions required by the
 safe-step/fast-step interior-point theory. The safe-step length bound is
-\citet[Lemma~3.1]{wright1996superlinear}, and global convergence follows from
-\citet[Theorem~1]{ralph2000superlinear}. Under strict complementarity, local
-superlinear convergence follows from \citet[Theorem~2]{ralph2000superlinear}, which
-does not require the active-constraint Jacobian to have full rank.
+\citet[Lemmas~3.1--3.2]{wright1996superlinear}. Global convergence follows from
+\citet[Theorem~3.3]{wright1996superlinear} and its constrained variational-inequality
+counterpart \citet[Theorem~1]{ralph2000superlinear}. Under strict complementarity,
+local superlinear convergence follows from \citet[Theorem~2]{ralph2000superlinear},
+which does not require the active-constraint Jacobian to have full rank.
 \end{proof}
 
 The result is meant as a convergence statement, not as a tuning recipe. The constants
