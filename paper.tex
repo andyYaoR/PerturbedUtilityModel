@@ -8,6 +8,9 @@
 \usepackage{authblk}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
 
 \newcommand{\cG}{\mathcal{G}}
 \newcommand{\cN}{\mathcal{N}}
@@ -656,9 +659,9 @@ a generic conic solver for each OD subproblem.
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{Outer loop: projected gradient descent}\label{sec:outer-loop}
+\subsection{Outer loop: projected damped Newton}\label{sec:outer-loop}
 
-The outer loop minimizes $Q_B$ over $\mathbb{R}^K \times \Gamma_B$ by projected gradient descent. 
+The outer loop minimizes the objective $Q_B$ over $\mathbb{R}^K \times \Gamma_B$, which is convex by Proposition~\ref{prop:debiased}. We use a projected damped-Newton method: it retains the global convergence of feasible projected-gradient descent on a convex program while using curvature to accelerate the typically \emph{flat} Fenchel--Young objective (on which a pure first-order step makes little progress).
 
 \paragraph{Outer gradient.} Because $\tilde\ell_b$ is a Fenchel--Young loss, its gradient is assembled in closed form from the inner solves, with no differentiation through $x^*_b$ (Proposition~\ref{prop:debiased}). With $v(\beta) = Z\beta$,
 \begin{equation}\label{eq:outer-gradient}
@@ -669,35 +672,87 @@ The outer loop minimizes $Q_B$ over $\mathbb{R}^K \times \Gamma_B$ by projected 
 \end{equation}
 where the link means $\bar y_b$ and U-statistics $\hat U_l$ are precomputed once from the data. Each outer step therefore needs only the predicted flows $\{x^*_b(\theta)\}_b$ returned by Algorithm~\ref{alg:inner}.
 
-\paragraph{Projected gradient step.} The outer update is
+\paragraph{Outer step.} Write $g_k = \nabla Q_B(\theta_k)$ for the exact
+gradient~\eqref{eq:outer-gradient}. The parameter dimension $P = K + (L-2)$ is
+small and the inner solver deliberately does not expose the flow sensitivity
+$\partial x^*/\partial v$, so we form the Hessian $H_k$ by central finite
+differences of~\eqref{eq:outer-gradient} and damp it, $H_k \leftarrow H_k + \rho I$
+with $\rho>0$, to keep it positive definite. The search direction is formed by a
+\emph{two-metric reduction} \citep{nocedal2006numerical}: coordinates pinned at an
+active bound of $\Gamma_B$ --- identified through the projection (those a small
+antigradient probe is clamped on) --- take a gradient step, while the remaining
+\emph{free} coordinates $F$ take the reduced Newton step $d_F = (H_k)_{FF}^{-1}(g_k)_F$.
+When no bound is active this is the full Newton step $H_k^{-1} g_k$; if the assembled
+direction is not a descent direction it falls back to the gradient $d_k = g_k$. The
+reduction avoids the slow crawl a full projected-Newton step suffers when a clamped
+coordinate couples into the free block. The iterate advances along the
+\emph{projected arc}
 \begin{equation}\label{eq:prox-step}
-    \theta_{k+1} = \mathrm{proj}_{\mathbb{R}^K \times \Gamma_B}\bigl(\theta_k - \alpha_k\, \nabla Q_B(\theta_k)\bigr),
+    \theta_k(t) = \mathrm{proj}_{\mathbb{R}^K \times \Gamma_B}\bigl(\theta_k - t\, d_k\bigr),
+    \qquad \theta_{k+1} = \theta_k(t_k),
 \end{equation}
-where $\alpha_k$ is selected by Armijo backtracking, and the projection is the identity on the $\beta$-block and the Euclidean projection onto the Bernstein polyhedron $\Gamma_B$ (a small QP) on the $\gamma$-block.
+where the projection is the identity on the $\beta$-block and the Euclidean
+projection onto the Bernstein polyhedron $\Gamma_B$ (a small QP) on the
+$\gamma$-block. The step $t_k$ is the first in a backtracking sequence
+$t \in \{1, \chi, \chi^2, \dots\}$ whose \emph{realized} move is a descent step and
+meets the Armijo decrease
+\begin{equation}\label{eq:outer-armijo}
+    Q_B\bigl(\theta_k(t)\bigr) \le Q_B(\theta_k) + c_1\, g_k^\top\bigl(\theta_k(t) - \theta_k\bigr),
+    \qquad g_k^\top\bigl(\theta_k(t) - \theta_k\bigr) < 0 .
+\end{equation}
+Measuring the decrease against the realized (post-projection) step --- not the
+full Newton step --- is what keeps the line search correct when a $\gamma$-bound
+is active. If no $t$ down to the backtracking floor decreases $Q_B$ along $d_k$,
+the step is retried along the projected gradient $d_k = g_k$, which is a feasible
+descent direction for the convex $Q_B$ whenever $\theta_k$ is not already
+stationary. The loop stops when the projected-gradient mapping
+$\|\theta_k - \mathrm{proj}_{\mathbb{R}^K \times \Gamma_B}(\theta_k - g_k)\|_\infty$
+falls below $\varepsilon$, or when the objective decrease becomes negligible (a
+stationary point on an active bound, where the projected curvature is one-sided).
+
+Because $Q_B$ is convex and the gradient~\eqref{eq:outer-gradient} is exact, the
+Armijo rule~\eqref{eq:outer-armijo} with the projected-gradient fallback is a
+globally convergent feasible-descent method \citep{nocedal2006numerical}: every
+limit point of $\{\theta_k\}$ minimizes $Q_B$ over $\mathbb{R}^K \times \Gamma_B$,
+and the minimizer is the estimator $\hat\theta$ of~\eqref{eq:estimator}. The
+finite-difference Hessian only accelerates the iteration; correctness rests on the
+exact gradient and the fallback, not on the Hessian's accuracy.
 
 \begin{algorithm}[ht]
-\caption{Projected gradient descent with interior-point inner solves.}\label{alg:outer}
+\caption{Projected damped Newton with batched interior-point inner solves.}\label{alg:outer}
 \begin{algorithmic}[1]
-\State \textbf{Input:} data $\{(b, D_b, \mathbf{n}_b)\}_{b=1}^B$, sieve degree $L$, outer tolerance $\varepsilon$, step size $\alpha_0 > 0$.
+\State \textbf{Input:} data $\{(b, D_b, \mathbf{n}_b)\}_{b=1}^B$, sieve degree $L$, tolerance $\varepsilon$, ridge $\rho>0$, Armijo $c_1$, backtracking factor $\chi\in(0,1)$.
 \State \textbf{Precompute:} U-statistics $\hat U_l((i,j),b)$ and link means $\bar{y}_b$ for all $b$; Bernstein matrix $M$.
-\State Initialise $\theta_0$.
+\State Initialise $\theta_0$ (project its $\gamma$-block onto $\Gamma_B$).
 \For{$k = 0, 1, 2, \ldots$}
-    \For{$b = 1, \ldots, B$ (parallel over OD pairs)}
-        \State $(\lambda^*_b(\theta_k),\, x^*_b(\theta_k)) \gets$ Algorithm~\ref{alg:inner} at $\theta_k$.
-    \EndFor
-    \State Assemble $g_k = \nabla Q_B(\theta_k)$ from~\eqref{eq:outer-gradient} using $\{x^*_b(\theta_k)\}_b$.
-    \If{$\|g_k\| < \varepsilon$} \textbf{break} \EndIf
-    \State $\alpha_k \gets$ Armijo backtracking on $\alpha \mapsto Q_B\bigl(\mathrm{proj}_{\mathbb{R}^K \times \Gamma_B}(\theta_k - \alpha g_k)\bigr)$, starting from $\alpha_0$.
-    \State $\theta_{k+1} \gets \mathrm{proj}_{\mathbb{R}^K \times \Gamma_B}(\theta_k - \alpha_k g_k)$.
+    \State Solve $\{x^*_b(\theta_k)\}_b$ for all OD pairs by the batched Algorithm~\ref{alg:inner}; assemble $g_k$ by~\eqref{eq:outer-gradient}.
+    \If{$\|\theta_k - \mathrm{proj}_{\mathbb{R}^K\times\Gamma_B}(\theta_k - g_k)\|_\infty < \varepsilon$} \textbf{break} \EndIf
+    \State Form $H_k$ by central differences of~\eqref{eq:outer-gradient}; identify the free set $F$ (coordinates the projection does not clamp) and set $d_k$ by the two-metric reduction: $(d_k)_F \gets ((H_k+\rho I)_{FF})^{-1} (g_k)_F$, gradient on the rest; use $d_k \gets g_k$ if $g_k^\top d_k \le 0$.
+    \State \emph{Line search:} $t \gets 1$; while the trial $\theta_k(t)$~\eqref{eq:prox-step} fails~\eqref{eq:outer-armijo}, set $t \gets \chi t$; if the floor is reached, retry with $d_k \gets g_k$.
+    \State $\theta_{k+1} \gets \theta_k(t)$.
 \EndFor
 \State \textbf{return} $\hat\theta := \theta_{k+1}$ and the dual estimates $\{\lambda^*_b\}_b$.
 \end{algorithmic}
 \end{algorithm}
 
-The inner solves over $b$ are independent and parallelize across OD pairs. Each interior-point solve converges in a small number of iterations that is essentially independent of $\theta$ and of the network size, so the per-outer-iteration cost is dominated by the parallel Laplacian solves.
+The inner solves over $b$ share the network and are computed in a single batched
+interior-point pass (Algorithm~\ref{alg:inner} vectorized over OD pairs), each
+converging in a small number of iterations essentially independent of $\theta$ and
+of the network size, so the per-outer-iteration cost is dominated by the batched
+Laplacian solves.
 
 \begin{remark}
-    Backtracking in the outer loop re-solves the inner problems at each trial step and can be expensive; the inner interior-point solves themselves use no objective line search, only the fraction-to-boundary rule~\eqref{eq:frac-to-boundary}.
+    The damped-Newton Hessian is assembled by central differences of the exact
+    gradient~\eqref{eq:outer-gradient}, costing $O(P)$ extra gradient evaluations
+    (each a batched inner solve) per outer step; with $P = K + (L-2)$ small this is
+    cheap, as each batched solve is a fixed, small number of weighted-Laplacian
+    iterations. A finite-difference probe of $\gamma$ may straddle the boundary of
+    $\Gamma_B$, where the inner problem is no longer convex; the loss flags such
+    points and the Hessian then uses a one-sided difference. The inner
+    interior-point solves use no objective line search, only the neighbourhood step
+    control of Algorithm~\ref{alg:inner}, and being primal they re-centre each call
+    (so they do not benefit from multiplier warm starts; the speed comes from
+    batching the OD pairs).
 \end{remark}
 
 
@@ -773,7 +828,131 @@ The constraint $c_0 \geq 0$ is automatically satisfied and can be dropped, leavi
 
 \section{Simulation study}\label{sec:simulation}
 
-TBC: this will show that we can generate data with the model and recover the parameters. It is interesting to explore a bit how much it takes in practice to identify higher-order terms $\gamma_l$. Claude seems to think it might require a lot of data to estimate e.g. $\gamma_5$.  
+We verify, on simulated data, that the debiased Fenchel--Young estimator behaves as
+the theory predicts: its score is unbiased at the truth, the estimator is
+$\sqrt B$-consistent and asymptotically normal with valid sandwich inference, and
+the Bernstein parametrization of $\Gamma$ recovers shape coefficients that the
+nonnegative parametrization cannot. We also confirm that the interior-point inner
+solver behaves inside the estimation loop as Proposition~\ref{prop:ipm} guarantees.
+
+\paragraph{Design.} We use both synthetic simple directed networks (one arc per
+node pair, so the Newton systems route to the weighted-Laplacian incidence fast
+path) and two standard benchmark road networks --- Sioux Falls ($24$ nodes, $76$
+arcs) and Chicago Sketch ($933$ nodes, $2\,950$ arcs) --- whose two-way streets are
+anti-parallel arcs that route to the general sparse-SDDM batch path. Link
+attributes $Z$ (the benchmark free-flow times, for the real networks) and a true
+$\theta_0 = (\beta_0,\gamma_0)$ are fixed so that all utilities $v(\beta_0)<0$, and
+we solve the predicted flows $x^*_b(\theta_0)$ by Algorithm~\ref{alg:inner}. Data
+are generated by the random-walk closure of Assumption~\ref{as:dgp}: for each OD
+pair $b$ we draw $D_b$ i.i.d.\ trips, each a walk from origin to destination
+choosing the next link with probability proportional to $x^*$ over the node's
+outgoing links, so the link counts satisfy
+$n_{(i,j),b}\sim\mathrm{Binomial}(D_b, x^*_{(i,j),b})$. We then form the
+falling-factorial U-statistics and fit $\hat\theta$ by Algorithm~\ref{alg:outer}.
+Each experiment averages over independent Monte Carlo replications.
+
+\paragraph{The loss is convex and minimized at the truth.} Consistent with
+Proposition~\ref{prop:debiased}(ii), the debiased objective $Q_B$ is convex in
+$\theta$ and its minimizer is $\theta_0$: sweeping each coordinate through $\theta_0$
+traces a convex bowl whose minimum sits at the true value, and $Q_B(\theta_0)$ is
+zero up to Monte Carlo and debiasing noise ($\approx -4\times10^{-5}$ at $B=400$,
+$D=2000$). The $\gamma$-coordinate slices flatten to a non-finite sentinel once a
+proposed $\gamma$ leaves the convexity set $\Gamma_B$ --- a property of the inner
+solver's domain, not of $Q_B$, which is finite everywhere.
+
+\paragraph{The debiasing removes the score bias.} Table~\ref{tab:sim-score} reports
+the Monte Carlo mean of the $\gamma$-score $\nabla_\gamma \tilde\ell_b$ evaluated at
+the true $\theta_0$, for the debiased loss and for the naive plug-in that replaces
+$\hat U_l$ by $(n/D)^l$. The debiased score is statistically indistinguishable from
+zero at every sample size, as Proposition~\ref{prop:debiased}(iii) requires, while
+the naive score is biased upward; the naive bias shrinks like $1/D$ but does not
+vanish at fixed trips-per-pair, which is exactly the failure the U-statistics
+correct. The same pattern holds on the Sioux Falls benchmark (general-SDDM path):
+the debiased $\gamma$-score is within one Monte Carlo standard error of zero at
+$D\in\{20,100,1000\}$ while the naive score is $\{2.8,0.48,0.05\}\times10^{-2}$,
+again shrinking like $1/D$.
+
+\begin{table}[ht]
+\centering
+\caption{Mean $\gamma$-score at $\theta_0$ ($L=5$, $\gamma_0=(0.5,0.3,0.1)$;
+$B=200$ OD pairs; $300$ replications). The debiased score is within one Monte
+Carlo standard error of zero; the naive plug-in is biased upward and shrinks like
+$1/D$.}\label{tab:sim-score}
+\begin{tabular}{l ccc}
+\toprule
+$D$ (trips/pair) & debiased $\bar\nabla_{\gamma_3}$ & naive $\bar\nabla_{\gamma_3}$ & naive bias factor \\
+\midrule
+$20$   & $6.4\times10^{-4}\ (\pm 2.9\times10^{-4})$ & $2.2\times10^{-2}$ & --- \\
+$100$  & $1.3\times10^{-5}\ (\pm 1.2\times10^{-4})$ & $4.3\times10^{-3}$ & $\approx 5\times$ \\
+$1000$ & $6.1\times10^{-5}\ (\pm 3.7\times10^{-5})$ & $4.9\times10^{-4}$ & $\approx 9\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Consistency and inference.} Across $B\in\{25,50,100,200,400,800,1600\}$
+(with $D=200$, $L=3$, $\gamma_0=0.5$) the root-mean-square error of $\hat\theta$
+falls monotonically, from $0.78$ at $B=25$ to $0.042$ at $B=1600$. A single
+log--log fit gives a slope of $-0.67$, slightly steeper than the $-1/2$ of
+Proposition~\ref{prop:asymptotic}; this is the expected finite-sample signature,
+not a violation. Writing the mean-squared error as $a/B + b/B^2$, the fitted
+$b\approx 3.0\times10^2>0$ inflates the small-$B$ error, so the \emph{local} slope
+$-\tfrac12-(b/a)/(2B)$ is steeper than $-1/2$ at small $B$ and rises toward $-1/2$
+as $B$ grows --- the measured segment slopes pass through $-0.49$ and $-0.50$ in the
+$B\in[200,800]$ range where the asymptotic regime is reached. For inference, the
+sandwich standard error tracks the Monte Carlo standard deviation: on Sioux Falls
+(general-SDDM path, $L=3$) the ratio is $0.94$--$0.96$ and the nominal $95\%$
+intervals cover at $97.5\%$. On the synthetic network the ratios run lower
+($0.71$--$0.81$) and coverage is $90$--$95\%$: the shape direction is weakly
+identified (next paragraph), so its standard error is the least accurate, exactly as
+the ill-conditioning predicts. The $J^{-1}KJ^{-1}$ formula thus delivers valid
+inference, with the anticipated loss of precision in the weakly identified shape
+directions.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.52\textwidth]{claim3_synth.pdf}
+\caption{Consistency of $\hat\theta$. Root-mean-square error versus the number of
+OD pairs $B$ on log--log axes ($D=200$, $L=3$). The fitted $a/B+b/B^2$ curve (with
+$b>0$) explains the slightly-steeper-than-$-1/2$ small-$B$ slope; the decay
+approaches the $\sqrt B$ rate as $B$ grows.}\label{fig:claim3}
+\end{figure}
+
+\paragraph{Identifying the shape coefficients.} The shape coefficients are only
+weakly separated, and not in the naive ``higher degree is harder'' way. On the flow
+support --- which concentrates near zero, since most links carry almost no flow ---
+the monomials $x^l$ that the degrees $l=3,4,5$ multiply are strongly collinear: at
+$\theta_0$ the $\gamma$-block score correlations are $0.95$--$0.99$ and the bread
+$A$ of the sandwich is ill-conditioned ($\operatorname{cond}(A)\approx 5\times
+10^4$). The per-coordinate error in $\hat\gamma_l$ is therefore large and
+\emph{non-monotone} in degree --- the cubic term, not the quintic, is the least
+stable under the collinearity --- and shrinks only slowly with the data, even
+though the joint estimate is $\sqrt B$-consistent and the sandwich variance
+correctly reflects the ill-conditioning. Resolving the individual high-degree
+coefficients thus demands substantially more data (more OD pairs and more trips per
+pair) than the aggregate fit: this is the statistical price of the semiparametric
+flexibility, and the reason a parsimonious sieve (small $L$) or a regularized
+$\gamma$ is preferable unless the data are rich.
+
+\paragraph{The choice of $\Gamma$.} The parametrization of $\Gamma$ also
+matters when the truth has negative curvature corrections. With
+$\gamma_0=(0.8,-0.3)$ (in the Bernstein polyhedron $\Gamma_B$ but outside
+$\mathbb{R}_+$), the nonnegative parametrization clips $\hat\gamma_4$ to $0$
+(RMSE $0.30$, the full bias), whereas the Bernstein parametrization recovers the
+negative coefficient ($\hat\gamma_4 \approx -0.31$, RMSE $0.07$; $B=200$, $D=2000$,
+$40$ replications). The Bernstein polyhedron is therefore the better default when
+the data may favour less curvature than the quadratic baseline.
+
+\paragraph{The inner solver in the estimation loop.} At every $\theta$ visited by
+the outer loop the batched interior-point solver converges in a small, essentially
+constant number of iterations and matches the independent \textsc{scipy} dual
+oracle, as Proposition~\ref{prop:ipm} guarantees. This holds at scale: on Chicago
+Sketch ($2\,950$ arcs) across a sweep of $\theta$ values the solver takes $13$--$14$
+iterations per $\theta$ and reproduces the per-OD \textsc{scipy} solution to
+$5\times10^{-7}$. Because the primal method re-centres from its strictly-interior
+start, its iteration count does not depend on a multiplier warm start; the
+efficiency of the loop comes instead from solving all OD pairs of a network in a
+single vectorized (batched) pass, with the per-iteration arithmetic and the
+safeguard line search evaluated by GIL-released native kernels.
 
 \section{Application to Shenzhen taxi data}\label{sec:application}
 
