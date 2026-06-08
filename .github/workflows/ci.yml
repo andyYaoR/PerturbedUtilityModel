@@ -15,40 +15,44 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        shell: bash
+        # Login shell so `conda activate` persists across steps (incl. Windows).
+        shell: bash -el {0}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12"]
     env:
-      # PyTorch and any optional OpenMP-linked backend can each ship a libomp;
-      # allow the duplicate so importing the package never aborts (mainly macOS).
+      # PyTorch and CHOLMOD can each ship a libomp; allow the duplicate so importing
+      # the package never aborts (mainly macOS).
       KMP_DUPLICATE_LIB_OK: "TRUE"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      # SuiteSparse/CHOLMOD is a required build dependency; conda-forge provides it
+      # (and a compatible C++ toolchain) on all three operating systems.
+      - name: Set up conda (conda-forge)
+        uses: conda-incubator/setup-miniconda@v3
         with:
+          miniforge-version: latest
           python-version: ${{ matrix.python-version }}
+          channels: conda-forge
+          channel-priority: strict
+          activate-environment: purc
 
-      - name: Install build prerequisites
-        # The native cores build with --no-build-isolation (as in the docs), so the
-        # build backend, nanobind, CMake/Ninja, and PyTorch must be installed first.
-        # CHOLMOD/SuiteSparse and CUDA are optional and auto-detected; when absent
-        # the build falls back to the bundled approxChol solver.
+      - name: Install build prerequisites + SuiteSparse + PyTorch
         run: |
-          python -m pip install --upgrade pip
-          pip install "scikit-build-core>=0.10.0" "nanobind>=2.1.0" cmake ninja
-          pip install torch
+          conda install -y \
+            suitesparse cxx-compiler "cmake>=3.18" ninja \
+            "nanobind>=2.1.0" "scikit-build-core>=0.10.0" \
+            numpy scipy sympy "pytorch>=2.0"
 
-      - name: Install the package (editable, no build isolation) — as documented
+      - name: Build and install (required CHOLMOD, no build isolation) — as documented
         run: pip install --no-build-isolation -e ".[test]"
 
-      - name: Import smoke test
+      - name: Import smoke test (assert CHOLMOD is built)
         run: |
-          python -c "import purc; from purc.static_purc import PUMProblem, ForwardSolverConfig, get_solver, get_perturbation; from purc.estimators.debiased_fy import DebiasedFYEstimator, sandwich_variance; from purc.laplaciansolve import SDDMSolver, SolverConfig; print('import OK', purc.__version__)"
+          python -c "import purc; from purc.laplaciansolve._loader import has_cholmod; assert has_cholmod(), 'CHOLMOD not built'; from purc.static_purc import PUMProblem, ForwardSolverConfig, get_solver; from purc.estimators.debiased_fy import DebiasedFYEstimator, sandwich_variance; print('import OK', purc.__version__)"
 
       - name: Run an example
         run: python examples/perturbation_comparison.py

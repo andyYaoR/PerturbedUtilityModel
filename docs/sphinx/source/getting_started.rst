@@ -9,12 +9,28 @@ PURC forward-solver core and the vendored ``LaplacianSolve`` (Laplacian / SDDM)
 backend.  A single editable install builds both against your environment.  The full
 walkthrough lives in the top-level ``README.md``.
 
-System dependencies
-^^^^^^^^^^^^^^^^^^^^
+PURCSolver requires **SuiteSparse / CHOLMOD** -- it is the direct factorization
+behind the forward solver's batched Newton step over OD-pairs (per-system distinct
+matrices, for which there is no iterative batched route), so the build fails without
+it.  A C++17 toolchain and CMake are also required; CUDA is an optional,
+auto-detected accelerator.
 
-A C++17 toolchain and CMake are required.  CHOLMOD / SuiteSparse and CUDA are
-**optional** and auto-detected -- without either, the package falls back to the
-bundled ``approxChol`` solver.
+Option A -- conda (recommended)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+conda-forge ships SuiteSparse and a compatible C++ toolchain on Linux, macOS, and
+Windows, so this is the most reliable route -- and the only simple one on Windows:
+
+.. code-block:: bash
+
+   conda env create -f environment.yml
+   conda activate purc
+   pip install --no-build-isolation -e ".[test]"      # or ".[dev]"
+
+Option B -- pip / venv (Linux and macOS)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Install SuiteSparse and a toolchain from your system package manager first:
 
 .. code-block:: bash
 
@@ -26,35 +42,20 @@ bundled ``approxChol`` solver.
    sudo apt install -y build-essential cmake ninja-build pkg-config \
      python3-dev libomp-dev libsuitesparse-dev
 
-On **Windows**, install the Visual Studio Build Tools with the "Desktop development
-with C++" workload (the MSVC compiler); ``cmake`` and ``ninja`` are installed by the
-build step below.  The optional CHOLMOD / SuiteSparse and CUDA backends are not
-required -- the build uses the bundled ``approxChol`` solver when they are absent.
-
-Install
-^^^^^^^
-
-The LaplacianSolve backend is vendored in-tree (``purc.laplaciansolve``), so a single
-editable install builds everything -- the PURC native core and the Laplacian / SDDM
-solver.  Because ``--no-build-isolation`` makes the native cores build against the
-PyTorch already in your environment, install the build prerequisites (PyTorch
-included) first:
+Then build in a virtualenv.  Because ``--no-build-isolation`` makes the native cores
+build against the PyTorch already in your environment, install the build
+prerequisites (PyTorch included) first:
 
 .. code-block:: bash
 
    python -m venv .venv
-   source .venv/bin/activate          # Windows (PowerShell): .venv\Scripts\Activate.ps1
+   source .venv/bin/activate
    python -m pip install --upgrade pip
-
-   # build prerequisites + a CPU build of PyTorch
    pip install "scikit-build-core>=0.10.0" "nanobind>=2.1.0" cmake ninja torch
+   pip install --no-build-isolation -e ".[test]"      # or ".[dev]"
 
-   # build and install the package (editable)
-   pip install --no-build-isolation -e .
-
-For the development extras (tests, linters, and the CVXPY oracle) use
-``pip install --no-build-isolation -e ".[dev]"``.  This is exactly the flow run by
-the macOS / Windows / Linux CI.
+On **Windows**, use Option A (conda): SuiteSparse is not readily pip-installable, and
+the conda-forge build supplies both it and the MSVC-compatible toolchain.
 
 macOS OpenMP
 ^^^^^^^^^^^^

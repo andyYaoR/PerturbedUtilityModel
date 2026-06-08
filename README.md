@@ -93,15 +93,23 @@ print(res.x, res.success, res.nit)   # res.x is a torch.Tensor; res.x.numpy() is
 
 The LaplacianSolve backend is **vendored in-tree** (`purc.laplaciansolve`) and built
 by this project's CMake, so a single editable install builds everything — the PURC
-native core and the Laplacian/SDDM solver — against your environment:
+native core and the Laplacian/SDDM solver.
+
+**SuiteSparse / CHOLMOD is a required dependency** (the direct factorization behind
+the batched Newton solve over OD-pairs). conda-forge is the most reliable way to get
+it on all platforms, and the only simple one on Windows:
 
 ```bash
-pip install --no-build-isolation -e .
+conda env create -f environment.yml        # SuiteSparse + toolchain (Linux/macOS/Windows)
+conda activate purc
+pip install --no-build-isolation -e ".[dev]"
 ```
 
-(`--no-build-isolation` so the native cores build against your installed torch.
-CHOLMOD/SuiteSparse and CUDA are auto-detected optionals — absent either, the package
-falls back to the bundled `approxChol` solver.)
+Without conda (Linux/macOS), install SuiteSparse from your package manager first
+(`brew install suite-sparse` / `apt install libsuitesparse-dev`), then
+`pip install --no-build-isolation -e ".[dev]"`. CUDA is an optional, auto-detected
+accelerator. See [the docs](docs/sphinx/source/getting_started.rst) for the full
+per-platform walkthrough.
 
 ## Development
 

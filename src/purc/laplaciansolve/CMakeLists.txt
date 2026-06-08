@@ -94,39 +94,44 @@ if(LAPLACIANSOLVE_ENABLE_CUDA)
   endif()
 endif()
 
-# ── Optional CHOLMOD direct SPD solver (built when SuiteSparse is found) ─
-# The same library Julia's `cholesky` uses; the fast path for the SPD PURC
-# matrix M = H + eps*I and the low-fill regime (road networks).  Absent
-# SuiteSparse, the package falls back to approxChol (a capability fallback, not a
-# wrong-answer one) and reports it.
-option(LAPLACIANSOLVE_CHOLMOD "Build the CHOLMOD direct SPD solver when found" ON)
+# ── CHOLMOD direct SPD solver (REQUIRED) ────────────────────────────
+# SuiteSparse/CHOLMOD is a hard dependency: it is the direct factorization behind
+# the batched Newton solve over OD-pairs (per-system distinct matrices), for which
+# there is no iterative batched route.  The build fails if it is not found, so every
+# install has the same (direct) batched performance.
+option(LAPLACIANSOLVE_CHOLMOD "Build the CHOLMOD direct SPD solver (required)" ON)
 if(LAPLACIANSOLVE_CHOLMOD)
   find_path(_LS_CHOLMOD_INCLUDE cholmod.h
     HINTS /opt/homebrew/opt/suite-sparse/include/suitesparse
           /opt/homebrew/include/suitesparse /usr/local/opt/suite-sparse/include/suitesparse
           /usr/local/include/suitesparse /usr/include/suitesparse
           ${CMAKE_PREFIX_PATH} ENV CONDA_PREFIX
-    PATH_SUFFIXES suitesparse include/suitesparse)
+    PATH_SUFFIXES suitesparse include/suitesparse Library/include/suitesparse)
   find_library(_LS_CHOLMOD_LIB cholmod
     HINTS /opt/homebrew/opt/suite-sparse/lib /opt/homebrew/lib
           /usr/local/opt/suite-sparse/lib /usr/local/lib /usr/lib
           ${CMAKE_PREFIX_PATH} ENV CONDA_PREFIX
-    PATH_SUFFIXES lib)
+    PATH_SUFFIXES lib Library/lib)
   if(_LS_CHOLMOD_INCLUDE AND _LS_CHOLMOD_LIB)
     get_filename_component(_LS_CHOLMOD_LIBDIR "${_LS_CHOLMOD_LIB}" DIRECTORY)
     nanobind_add_module(_laplaciansolve_cholmod nb_cholmod_module.cpp)
     target_include_directories(_laplaciansolve_cholmod
       PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${_LS_CHOLMOD_INCLUDE})
     target_link_libraries(_laplaciansolve_cholmod PRIVATE ${_LS_CHOLMOD_LIB})
-    target_link_options(_laplaciansolve_cholmod PRIVATE -Wl,-rpath,${_LS_CHOLMOD_LIBDIR})
     if(NOT MSVC)
+      target_link_options(_laplaciansolve_cholmod PRIVATE -Wl,-rpath,${_LS_CHOLMOD_LIBDIR})
       target_compile_options(_laplaciansolve_cholmod PRIVATE -O3)
     endif()
     install(TARGETS _laplaciansolve_cholmod LIBRARY DESTINATION purc/laplaciansolve)
     message(STATUS "LaplacianSolve: CHOLMOD direct solver enabled (${_LS_CHOLMOD_LIB}).")
   else()
-    message(STATUS "LaplacianSolve: SuiteSparse/CHOLMOD not found; "
-                   "direct SPD path unavailable (approxChol used instead).")
+    message(FATAL_ERROR
+      "SuiteSparse/CHOLMOD is REQUIRED but was not found.  Install it and reinstall:\n"
+      "  conda:         conda install -c conda-forge suitesparse\n"
+      "  macOS:         brew install suite-sparse\n"
+      "  Debian/Ubuntu: sudo apt install libsuitesparse-dev\n"
+      "(Advanced: -DLAPLACIANSOLVE_CHOLMOD=OFF builds a single-solve-only variant "
+      "without the batched OD-pair path.)")
   endif()
 endif()
 

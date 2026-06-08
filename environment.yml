@@ -1,0 +1,24 @@
+# Conda environment for building PURCSolver with the REQUIRED SuiteSparse/CHOLMOD
+# backend.  conda-forge ships SuiteSparse and a compatible C++ toolchain on Linux,
+# macOS, and Windows, so this is the most reliable route (and the only simple one on
+# Windows).
+#
+#   conda env create -f environment.yml
+#   conda activate purc
+#   pip install --no-build-isolation -e ".[test]"      # or ".[dev]"
+name: purc
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - suitesparse            # CHOLMOD — REQUIRED direct SPD batched solver
+  - cxx-compiler           # C++17 toolchain (Linux/macOS/Windows)
+  - cmake>=3.18
+  - ninja
+  - nanobind>=2.1.0
+  - scikit-build-core>=0.10.0
+  - numpy>=1.21
+  - scipy>=1.7
+  - sympy>=1.10
+  - pytorch>=2.0           # CPU build
+  - pip
