@@ -1,0 +1,63 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow the workflow to publish to GitHub Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    env:
+      KMP_DUPLICATE_LIB_OK: "TRUE"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda (conda-forge)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          python-version: "3.11"
+          channels: conda-forge
+          channel-priority: strict
+          activate-environment: purc
+
+      # Sphinx autodoc imports the package, so the native core (and CHOLMOD) must build.
+      - name: Install the package + docs dependencies
+        run: |
+          conda install -y \
+            suitesparse cxx-compiler "cmake>=3.18" ninja \
+            "nanobind>=2.1.0" "scikit-build-core>=0.10.0" \
+            numpy scipy sympy "pytorch>=2.0"
+          pip install --no-build-isolation -e .
+          pip install -r requirements-docs-sphinx.txt
+
+      - name: Build the HTML documentation
+        run: make -C docs/sphinx html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/sphinx/_build/html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
