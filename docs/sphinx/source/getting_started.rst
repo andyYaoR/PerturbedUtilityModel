@@ -26,23 +26,35 @@ bundled ``approxChol`` solver.
    sudo apt install -y build-essential cmake ninja-build pkg-config \
      python3-dev libomp-dev libsuitesparse-dev
 
+On **Windows**, install the Visual Studio Build Tools with the "Desktop development
+with C++" workload (the MSVC compiler); ``cmake`` and ``ninja`` are installed by the
+build step below.  The optional CHOLMOD / SuiteSparse and CUDA backends are not
+required -- the build uses the bundled ``approxChol`` solver when they are absent.
+
 Install
 ^^^^^^^
 
-The LaplacianSolve backend is vendored in-tree (``purc.laplaciansolve``), so a
-single editable install builds everything -- the PURC native core and the
-Laplacian / SDDM solver:
+The LaplacianSolve backend is vendored in-tree (``purc.laplaciansolve``), so a single
+editable install builds everything -- the PURC native core and the Laplacian / SDDM
+solver.  Because ``--no-build-isolation`` makes the native cores build against the
+PyTorch already in your environment, install the build prerequisites (PyTorch
+included) first:
 
 .. code-block:: bash
 
+   python -m venv .venv
+   source .venv/bin/activate          # Windows (PowerShell): .venv\Scripts\Activate.ps1
+   python -m pip install --upgrade pip
+
+   # build prerequisites + a CPU build of PyTorch
+   pip install "scikit-build-core>=0.10.0" "nanobind>=2.1.0" cmake ninja torch
+
+   # build and install the package (editable)
    pip install --no-build-isolation -e .
 
-``--no-build-isolation`` makes the native cores build against your installed
-PyTorch.  For the development extras (tests, linters, and the CVXPY oracle):
-
-.. code-block:: bash
-
-   pip install --no-build-isolation -e ".[dev]"
+For the development extras (tests, linters, and the CVXPY oracle) use
+``pip install --no-build-isolation -e ".[dev]"``.  This is exactly the flow run by
+the macOS / Windows / Linux CI.
 
 macOS OpenMP
 ^^^^^^^^^^^^
@@ -54,6 +66,17 @@ it persistent):
 .. code-block:: bash
 
    export KMP_DUPLICATE_LIB_OK=TRUE
+
+CPU portability (HPC clusters)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The native kernels are compiled with ``-march=native`` (when the compiler supports
+it), which targets the exact instruction set of the **build** machine.  On a
+heterogeneous cluster -- e.g. a login node with AVX-512 and compute nodes with only
+AVX2 -- importing the package on a compute node can then raise ``Illegal
+instruction`` (SIGILL).  Build on (or on a node matching) the hardware that will run
+the code, for example inside an ``srun`` / ``salloc`` session.  Laptops and single
+workstations are unaffected.
 
 Basic Usage
 -----------
