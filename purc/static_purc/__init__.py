@@ -23,6 +23,38 @@ from .utils.native import native_available
 __version__ = "0.0.0"
 
 
+def _require_cholmod() -> None:
+    """
+    Fail fast at import if the required SuiteSparse/CHOLMOD backend is not built.
+
+    CHOLMOD is the direct factorization behind the batched Newton solve over OD-pairs
+    (which has no iterative route), so it is a mandatory build dependency.  This is a
+    lightweight presence check that does not load the native core, keeping the import
+    cheap; a CHOLMOD that is present but fails to load at run time still raises a clear
+    error from the loader on first use.
+
+    Raises:
+        ImportError: If the CHOLMOD extension was not built (SuiteSparse absent).
+
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("purc.laplaciansolve._laplaciansolve_cholmod") is None:
+        raise ImportError(
+            "purc.static_purc requires the SuiteSparse/CHOLMOD backend, which is not "
+            "present in this build of purc.laplaciansolve.  The batched Newton solve "
+            "over OD-pairs has no iterative route, so CHOLMOD is mandatory.  Reinstall "
+            "with SuiteSparse available and rebuild:\n"
+            "  conda:         conda install -c conda-forge suitesparse\n"
+            "  macOS:         brew install suite-sparse\n"
+            "  Debian/Ubuntu: sudo apt install libsuitesparse-dev\n"
+            "then: pip install --no-build-isolation -e ."
+        )
+
+
+_require_cholmod()
+
+
 def __getattr__(name: str):
     """
     Lazily expose registries and base classes to avoid import-time cost.
