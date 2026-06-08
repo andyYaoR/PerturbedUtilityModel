@@ -44,7 +44,7 @@ Newton step (the primal part exactly as ``(1 - alpha)``) and the ``rho``-decreas
 of ``mu``.  An explicit ``||r|| <= beta * mu`` wall is *not* imposed -- the
 ``O(ell * alpha^2)`` nonlinearity of ``h'`` would wedge the iterate against it, and
 the pure-NCP ``g(alpha)`` device that keeps ``r`` exactly ``(1-alpha) r``
-(Wright-Ralph 1996, eq. 4b) does not transfer to PURC's mixed (equality+box) form.
+(Wright-Ralph 1996, eqs. (4b)-(6)) does not transfer to PURC's mixed (equality+box) form.
 This is the safe-step/fast-step method of Wright & Ralph (1996, *Math. Oper. Res.*
 21:815) and Ralph & Wright (2000, *Math. Oper. Res.* 25:179) within the
 Kojima-Noma-Yoshise (1994) framework.  The PURC KKT map is monotone (the problem
