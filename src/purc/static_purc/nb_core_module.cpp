@@ -13,10 +13,12 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace nb = nanobind;
@@ -408,6 +410,150 @@ void ipm_safe_backtrack_f64(Float64Arr1D x, Float64Arr1D z, Float64Arr1D w,
   }
 }
 
+// Dense solve M x = rhs (n x n row-major, partial pivoting).  M and rhs are
+// overwritten; returns false if (near-)singular.
+static bool solve_dense(double* M, double* rhs, int n, double* x) {
+  for (int col = 0; col < n; ++col) {
+    int piv = col;
+    double best = std::fabs(M[(size_t)col * n + col]);
+    for (int r = col + 1; r < n; ++r) {
+      double v = std::fabs(M[(size_t)r * n + col]);
+      if (v > best) { best = v; piv = r; }
+    }
+    if (best < 1e-300) return false;
+    if (piv != col)
+      for (int c = 0; c < n; ++c) {
+        std::swap(M[(size_t)col * n + c], M[(size_t)piv * n + c]);
+        if (c == 0) std::swap(rhs[col], rhs[piv]);
+      }
+    double diag = M[(size_t)col * n + col];
+    for (int r = col + 1; r < n; ++r) {
+      double f = M[(size_t)r * n + col] / diag;
+      if (f != 0.0) {
+        for (int c = col; c < n; ++c) M[(size_t)r * n + c] -= f * M[(size_t)col * n + c];
+        rhs[r] -= f * rhs[col];
+      }
+    }
+  }
+  for (int r = n - 1; r >= 0; --r) {
+    double s = rhs[r];
+    for (int c = r + 1; c < n; ++c) s -= M[(size_t)r * n + c] * x[c];
+    x[r] = s / M[(size_t)r * n + r];
+  }
+  return true;
+}
+
+// Primal active-set QP  min 1/2 d^T B d + g^T d  s.t.  lo<=d<=hi, A d >= a.
+// Mirrors the torch reference (unit-norm rows, feasible start d=0, Bland's rule).
+// Writes the step into d_out and [iters, converged] into info_out (length 2).
+void qp_box_linear_f64(Float64Arr1D B, Float64Arr1D g, Float64Arr1D lo,
+                       Float64Arr1D hi, Float64Arr1D A, Float64Arr1D a, int64_t P,
+                       int64_t m, double tol, int64_t max_iter,
+                       Float64MutArr1D d_out, Float64MutArr1D info_out) {
+  const double* Bp = B.data();
+  const double* gp = g.data();
+  const double* lop = lo.data();
+  const double* hip = hi.data();
+  const double* Ap = (m > 0) ? A.data() : nullptr;
+  const double* ap = (m > 0) ? a.data() : nullptr;
+  double* d = d_out.data();
+  double* info = info_out.data();
+  nb::gil_scoped_release release;
+
+  const int Pi = (int)P, mi = (int)m, mt = 2 * Pi + mi;
+  std::vector<double> C((size_t)mt * Pi, 0.0), b(mt, 0.0);
+  for (int i = 0; i < Pi; ++i) { C[(size_t)i * Pi + i] = 1.0; b[i] = lop[i]; }
+  for (int i = 0; i < Pi; ++i) { C[(size_t)(Pi + i) * Pi + i] = -1.0; b[Pi + i] = -hip[i]; }
+  for (int i = 0; i < mi; ++i) {
+    for (int j = 0; j < Pi; ++j) C[(size_t)(2 * Pi + i) * Pi + j] = Ap[(size_t)i * Pi + j];
+    b[2 * Pi + i] = ap[i];
+  }
+  for (int i = 0; i < mt; ++i) {  // unit-normalize rows
+    double nrm = 0.0;
+    for (int j = 0; j < Pi; ++j) { double v = C[(size_t)i * Pi + j]; nrm += v * v; }
+    nrm = std::sqrt(nrm);
+    if (nrm < 1e-300) nrm = 1e-300;
+    for (int j = 0; j < Pi; ++j) C[(size_t)i * Pi + j] /= nrm;
+    b[i] /= nrm;
+  }
+  for (int i = 0; i < Pi; ++i) d[i] = 0.0;
+  std::vector<char> work(mt, 0);
+  for (int i = 0; i < mt; ++i)
+    if (std::fabs(b[i]) <= tol) work[i] = 1;  // active at d=0 (residual = -b)
+  if (max_iter <= 0) max_iter = 10 * (Pi + mt) + 50;
+
+  std::vector<double> cvec(Pi), p(Pi), kkt, rhs, sol;
+  std::vector<int> idx;
+  int iters = 0;
+  for (iters = 1; iters <= max_iter; ++iters) {
+    idx.clear();
+    for (int i = 0; i < mt; ++i) if (work[i]) idx.push_back(i);
+    const int k = (int)idx.size();
+    for (int i = 0; i < Pi; ++i) {
+      double s = gp[i];
+      for (int j = 0; j < Pi; ++j) s += Bp[(size_t)i * Pi + j] * d[j];
+      cvec[i] = s;
+    }
+    const int n = Pi + k;
+    kkt.assign((size_t)n * n, 0.0);
+    rhs.assign(n, 0.0);
+    sol.assign(n, 0.0);
+    for (int i = 0; i < Pi; ++i)
+      for (int j = 0; j < Pi; ++j) kkt[(size_t)i * n + j] = Bp[(size_t)i * Pi + j];
+    for (int r = 0; r < k; ++r) {
+      const int row = idx[r];
+      for (int j = 0; j < Pi; ++j) {
+        const double cij = C[(size_t)row * Pi + j];
+        kkt[(size_t)j * n + (Pi + r)] = -cij;   // -Cw^T (top-right)
+        kkt[(size_t)(Pi + r) * n + j] = cij;     // Cw (bottom-left)
+      }
+    }
+    for (int i = 0; i < Pi; ++i) rhs[i] = -cvec[i];
+    solve_dense(kkt.data(), rhs.data(), n, sol.data());
+    for (int i = 0; i < Pi; ++i) p[i] = sol[i];
+
+    double pmax = 0.0;
+    for (int i = 0; i < Pi; ++i) pmax = std::max(pmax, std::fabs(p[i]));
+    if (pmax <= tol) {                    // step ~ 0: optimality / drop
+      int jdrop = -1;
+      for (int r = 0; r < k; ++r)
+        if (sol[Pi + r] < -tol) { jdrop = r; break; }  // Bland: lowest-index
+      if (k == 0 || jdrop < 0) { info[0] = (double)iters; info[1] = 1.0; return; }
+      work[idx[jdrop]] = 0;
+      continue;
+    }
+    double amin = 1.0;                     // ratio test (Bland tie-break)
+    for (int i = 0; i < mt; ++i) {
+      if (work[i]) continue;
+      double cp = 0.0, cd = 0.0;
+      for (int j = 0; j < Pi; ++j) {
+        const double cij = C[(size_t)i * Pi + j];
+        cp += cij * p[j];
+        cd += cij * d[j];
+      }
+      if (cp < -tol) { double ratio = (b[i] - cd) / cp; if (ratio < amin) amin = ratio; }
+    }
+    int jblock = -1;
+    if (amin < 1.0) {
+      for (int i = 0; i < mt && jblock < 0; ++i) {
+        if (work[i]) continue;
+        double cp = 0.0, cd = 0.0;
+        for (int j = 0; j < Pi; ++j) {
+          const double cij = C[(size_t)i * Pi + j];
+          cp += cij * p[j];
+          cd += cij * d[j];
+        }
+        if (cp < -tol && (b[i] - cd) / cp <= amin + tol) jblock = i;
+      }
+    }
+    const double alpha = (amin < 1.0) ? amin : 1.0;
+    for (int i = 0; i < Pi; ++i) d[i] += alpha * p[i];
+    if (jblock >= 0) work[jblock] = 1;
+  }
+  info[0] = (double)max_iter;
+  info[1] = 0.0;
+}
+
 }  // namespace
 
 NB_MODULE(_static_purc_core, m) {
@@ -440,4 +586,8 @@ NB_MODULE(_static_purc_core, m) {
         "sigma_s"_a, "done_in"_a, "kappa"_a, "gamma_min"_a, "chi"_a, "ls_max"_a,
         "B"_a, "N"_a, "k"_a, "xs"_a, "zs"_a, "ws"_a, "lams"_a, "done_out"_a,
         "Fused batched IPM safe-step backtracking (Armijo arm, GIL released).");
+  m.def("qp_box_linear_f64", &qp_box_linear_f64, "B"_a, "g"_a, "lo"_a, "hi"_a,
+        "A"_a, "a"_a, "P"_a, "m"_a, "tol"_a, "max_iter"_a, "d_out"_a, "info_out"_a,
+        "Primal active-set QP min 1/2 d'Bd + g'd s.t. lo<=d<=hi, A d>=a "
+        "(unit-norm rows, Bland's rule, GIL released); writes d and [iters,conv].");
 }

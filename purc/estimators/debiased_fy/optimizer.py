@@ -25,16 +25,20 @@ from ..base import EstimationResult, Estimator, SimulatedData
 from .basis import SieveBasis
 from .loss import DebiasedFYLoss
 from .projection import GammaProjection
+from .tr_optimizer import TRConfig, TrustRegionBFGS
 from .variance import hessian_fd
 
 
 @dataclass
 class EstimatorConfig:
     """
-    Configuration for the projected damped-Newton estimator.
+    Configuration for the debiased-FY estimator's outer solver.
+
+    The default solver is trust-region BFGS (``method="tr_bfgs"``); the projected
+    damped-Newton path (``method="newton"``) is retained for comparison.
 
     Attributes:
-        max_iter: Maximum outer (Newton) iterations.
+        max_iter: Maximum outer iterations.
         tol_grad: Stop when the projected gradient-mapping sup-norm is below this.
         tol_step: Stop when the parameter step sup-norm is below this.
         tol_obj: Stop when the relative objective decrease falls below this
@@ -46,6 +50,9 @@ class EstimatorConfig:
         ridge: Ridge added to the Hessian for positive definiteness.
         fd_step: Finite-difference step for the Hessian.
         proj: The sieve projection (``GammaProjection``).
+        method: Outer solver -- ``"newton"`` (projected damped Newton, FD Hessian) or
+            ``"tr_bfgs"`` (trust-region BFGS: gradient-only, no FD, no line search,
+            handles the box and the Bernstein polyhedron).
         verbose: Print per-iteration diagnostics.
 
     """
@@ -61,6 +68,7 @@ class EstimatorConfig:
     fd_step: float = 1e-5
     proj: GammaProjection = field(default_factory=lambda: GammaProjection("bernstein"))
     basis: object = None  # SieveBasis; None -> monomial (power-series) parametrization
+    method: str = "tr_bfgs"  # "tr_bfgs" (gradient-only trust region, default) or "newton"
     verbose: bool = False
 
 
@@ -121,6 +129,8 @@ class DebiasedFYEstimator(Estimator):
         else:
             theta = as_tensor(self.theta_init).to(DEFAULT_DTYPE).reshape(-1)
         theta = self._project(theta, layout)
+        if cfg.method == "tr_bfgs":
+            return self._fit_tr_bfgs(loss, layout, basis, theta)
         eye = torch.eye(P, dtype=DEFAULT_DTYPE)
 
         Q, g = loss.value_and_grad(theta)
@@ -198,4 +208,37 @@ class DebiasedFYEstimator(Estimator):
             n_outer=nit,
             converged=converged,
             extras={"gmap_history": ginf_hist, "c_hat": c, "basis": basis.name},
+        )
+
+    def _fit_tr_bfgs(self, loss, layout, basis, theta0) -> EstimationResult:
+        """
+        Fit by trust-region BFGS: gradient-only (no FD Hessian), line-search free.
+
+        The convexity constraint is handled inside the trust-region QP subproblem:
+        ``nonneg`` is the box ``c >= 0`` (monomial only), ``bernstein`` is the
+        polyhedron ``(M T) c >= -1`` (the Bernstein matrix pulled back into the basis
+        ``c``).  Returns an :class:`EstimationResult` matching the Newton path
+        (``theta_hat`` gamma block in the basis ``c``; ``gamma_hat`` in monomials).
+        """
+        cfg = self.config
+        n_beta = layout.size - (self.L - 2)
+        if cfg.proj.kind == "nonneg":
+            bM = None
+        else:
+            from ...static_purc.perturbations._bernstein import bernstein_matrix
+
+            bM = as_tensor(basis.constraint_matrix(bernstein_matrix(self.L - 2))).to(DEFAULT_DTYPE)
+        tr = TrustRegionBFGS(TRConfig(max_iter=cfg.max_iter, tol=cfg.tol_grad))
+        res = tr.minimize(loss.value_and_grad, theta0, n_beta, bernstein_M=bM)
+        beta, c = layout.unpack(res.theta)
+        gamma = basis.to_monomial(c)
+        return EstimationResult(
+            theta_hat=res.theta,
+            beta_hat=beta,
+            gamma_hat=gamma,
+            objective=res.objective,
+            grad=res.grad,
+            n_outer=res.n_outer,
+            converged=res.converged,
+            extras={"gmap": res.gmap, "c_hat": c, "basis": basis.name, "method": "tr_bfgs"},
         )
