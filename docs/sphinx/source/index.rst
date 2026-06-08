@@ -41,9 +41,9 @@ Quick start
 
    A = sp.csr_matrix(np.ones((1, 5)))            # sum(x) = 1
    poly = GeneralPolytope(A, b=np.array([1.0]), lo=0.0, hi=1.0)
-   prob = PUMProblem(get_perturbation("entropy"), poly)
+   prob = PUMProblem(get_perturbation("modified_entropy"), poly)
 
-   solver = get_solver("auto", config=ForwardSolverConfig())
+   solver = get_solver("ipm", config=ForwardSolverConfig())   # primal-dual interior point
    solver.preprocess(prob)
    # theta = (beta, gamma); torch or numpy inputs are both accepted.
    res = solver.solve((np.array([0.1, -0.4, 0.7, 0.2, -0.1]), np.zeros(0)))

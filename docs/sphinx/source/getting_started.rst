@@ -83,10 +83,10 @@ Basic Usage
 -----------
 
 Build a problem from a perturbation kernel and a polytope, preprocess a solver
-once, then solve.  The unified :func:`~purc.static_purc.get_solver` entry point
-selects its numerical regime from a provable property of the kernel, so no method
-or tuning parameter has to be chosen by hand; the same preprocessed solver is
-reused across many right-hand sides.
+once, then solve.  Here we use the primal--dual interior-point method
+(``get_solver("ipm")``); :func:`~purc.static_purc.get_solver` with ``"auto"`` instead
+selects the regime from a provable property of the kernel.  The same preprocessed
+solver is reused across many right-hand sides.
 
 .. code-block:: python
 
@@ -99,9 +99,9 @@ reused across many right-hand sides.
 
    A = sp.csr_matrix(np.ones((1, 5)))            # sum(x) = 1
    poly = GeneralPolytope(A, b=np.array([1.0]), lo=0.0, hi=1.0)
-   prob = PUMProblem(get_perturbation("entropy"), poly)
+   prob = PUMProblem(get_perturbation("modified_entropy"), poly)
 
-   solver = get_solver("auto", config=ForwardSolverConfig())
+   solver = get_solver("ipm", config=ForwardSolverConfig())   # primal-dual interior point
    solver.preprocess(prob)
    # theta = (beta, gamma); torch or numpy inputs are both accepted.
    res = solver.solve((np.array([0.1, -0.4, 0.7, 0.2, -0.1]), np.zeros(0)))

@@ -12,10 +12,11 @@ is a separable, strictly convex perturbation (here weighted by the free-flow tra
 time ``ell_i``), and ``v(beta)`` are the link utilities.
 
 The example loads the SiouxFalls network (24 nodes, 76 directed links), builds a
-:class:`~purc.static_purc.PUMProblem`, and solves it through the unified interface
-:func:`~purc.static_purc.get_solver` entry point. The ``"auto"`` solver chooses its
-numerical regime from a provable property of the kernel. It then solves a single 
-origin-destination demand and a batch of demands, reusing a single preprocessing step.
+:class:`~purc.static_purc.PUMProblem`, and solves it with the primal--dual
+interior-point method via :func:`~purc.static_purc.get_solver` (``"ipm"``); the
+``"auto"`` regime would select the same solver here from a provable property of the
+kernel. It then solves a single origin-destination demand and a batch of demands,
+reusing a single preprocessing step.
 
 Run:  python examples/forward_solve.py
 """
@@ -61,9 +62,9 @@ def main() -> None:
     cons = GeneralPolytope(A, b0, lo=0.0, hi=1.0, ell=ell)
     prob = PUMProblem(get_perturbation("modified_entropy"), cons, Z=None)
 
-    solver = get_solver("auto", config=ForwardSolverConfig(tol=1e-9, max_iter=200))
+    solver = get_solver("ipm", config=ForwardSolverConfig(tol=1e-9, max_iter=200))
     solver.preprocess(prob)  # one-time setup
-    print(f"Solver regime (selected from a provable kernel property): {solver.regime!r}\n")
+    print("Solver: primal-dual interior-point method (IPM).\n")
 
     # --- single OD solve -----------------------------------------------------
     res = solver.solve((beta, gamma), b=b0)
