@@ -24,6 +24,12 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 
+#if defined(__GNUC__) || defined(__clang__)
+#define PURC_RESTRICT __restrict__
+#else
+#define PURC_RESTRICT
+#endif
+
 // 1-D contiguous CPU array views (zero-copy).
 using Float64Arr1D =
     nb::ndarray<nb::numpy, const double, nb::ndim<1>, nb::device::cpu, nb::c_contig>;
@@ -63,11 +69,11 @@ void axpy_f64(double a, Float64Arr1D x, Float64MutArr1D y) {
 void csr_spmv_f64(Int64Arr1D indptr, Int64Arr1D indices, Float64Arr1D data,
                   Float64Arr1D x, Float64MutArr1D y) {
   const int64_t nrows = static_cast<int64_t>(indptr.shape(0)) - 1;
-  const int64_t* __restrict__ ip = indptr.data();
-  const int64_t* __restrict__ ic = indices.data();
-  const double* __restrict__ da = data.data();
-  const double* __restrict__ xp = x.data();
-  double* __restrict__ yp = y.data();
+  const int64_t* PURC_RESTRICT ip = indptr.data();
+  const int64_t* PURC_RESTRICT ic = indices.data();
+  const double* PURC_RESTRICT da = data.data();
+  const double* PURC_RESTRICT xp = x.data();
+  double* PURC_RESTRICT yp = y.data();
   nb::gil_scoped_release release;
   for (int64_t i = 0; i < nrows; ++i) {
     double s = 0.0;
@@ -89,12 +95,12 @@ void csc_assemble_f64(Int64Arr1D slot, Float64Arr1D coeff, Int64Arr1D srci,
   const int64_t ncontrib = static_cast<int64_t>(slot.shape(0));
   const int64_t kdiag = static_cast<int64_t>(diag_slot.shape(0));
   const int64_t nnz = static_cast<int64_t>(out.shape(0));
-  const int64_t* __restrict__ sp = slot.data();
-  const double* __restrict__ cp = coeff.data();
-  const int64_t* __restrict__ si = srci.data();
-  const double* __restrict__ wp = w.data();
-  const int64_t* __restrict__ dp = diag_slot.data();
-  double* __restrict__ op = out.data();
+  const int64_t* PURC_RESTRICT sp = slot.data();
+  const double* PURC_RESTRICT cp = coeff.data();
+  const int64_t* PURC_RESTRICT si = srci.data();
+  const double* PURC_RESTRICT wp = w.data();
+  const int64_t* PURC_RESTRICT dp = diag_slot.data();
+  double* PURC_RESTRICT op = out.data();
   nb::gil_scoped_release release;
   for (int64_t i = 0; i < nnz; ++i) op[i] = 0.0;
   for (int64_t p = 0; p < ncontrib; ++p) op[sp[p]] += cp[p] * wp[si[p]];
