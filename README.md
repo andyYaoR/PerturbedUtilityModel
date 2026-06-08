@@ -2,8 +2,8 @@
 
 **Perturbed utility models with general polytope constraints**, solved by a
 **regularized semismooth Newton (SSN)** method. The per-iteration linear solve is
-delegated to the optimized, GIL-released
-[LaplacianSolve](../LaplacianSolve) backend.
+delegated to the optimized, GIL-released LaplacianSolve backend, vendored in-tree as
+[`purc.laplaciansolve`](purc/laplaciansolve).
 
 PURCSolver is a structured, modular companion to the
 [PUM](../PUM) package (same engineering conventions, **without** the equilibrium
@@ -91,13 +91,17 @@ print(res.x, res.success, res.nit)   # res.x is a torch.Tensor; res.x.numpy() is
 
 ## Install (development)
 
-LaplacianSolve is a local sibling dependency; install it first, then PURCSolver
-editable so the native core builds against your environment:
+The LaplacianSolve backend is **vendored in-tree** (`purc.laplaciansolve`) and built
+by this project's CMake, so a single editable install builds everything — the PURC
+native core and the Laplacian/SDDM solver — against your environment:
 
 ```bash
-pip install --no-build-isolation -e ../LaplacianSolve   # if not already installed
 pip install --no-build-isolation -e .
 ```
+
+(`--no-build-isolation` so the native cores build against your installed torch.
+CHOLMOD/SuiteSparse and CUDA are auto-detected optionals — absent either, the package
+falls back to the bundled `approxChol` solver.)
 
 ## Development
 

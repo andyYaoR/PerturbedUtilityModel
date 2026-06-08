@@ -119,12 +119,12 @@ class SSNConfig:
         when a solve actually runs, not when an :class:`SSNConfig` is created.
 
         Returns:
-            A ``laplaciansolve.SolverConfig`` instance, or ``None`` if
+            A ``purc.laplaciansolve.SolverConfig`` instance, or ``None`` if
             LaplacianSolve is unavailable (callers may then use a fallback).
 
         """
         try:
-            from laplaciansolve import SolverConfig
+            from purc.laplaciansolve import SolverConfig
         except ImportError:  # pragma: no cover - exercised only without the dep
             return None
         return SolverConfig(**self.laplacian)

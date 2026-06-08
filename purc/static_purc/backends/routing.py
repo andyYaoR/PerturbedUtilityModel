@@ -39,7 +39,7 @@ class LaplacianBackend:
 
     Args:
         polytope: The constraint polytope (its ``A`` fixes the pattern).
-        laplacian_options: Options forwarded to ``laplaciansolve.SolverConfig``
+        laplacian_options: Options forwarded to ``purc.laplaciansolve.SolverConfig``
             (e.g. ``{"method": "cholmod", "tol": 1e-10}``).  ``method`` defaults
             to ``"cholmod"`` when available, else ``"auto"``.
 
@@ -65,7 +65,7 @@ class LaplacianBackend:
             # multigraph incidence we fall back to the general SDDM path, which
             # handles it correctly (the assembler sums parallel-edge contributions).
             try:
-                from laplaciansolve import PURCLaplacianSolver, SolverConfig
+                from purc.laplaciansolve import PURCLaplacianSolver, SolverConfig
 
                 purc = PURCLaplacianSolver(
                     polytope.edges, n_nodes=polytope.n_nodes, config=SolverConfig(**opts)
@@ -105,7 +105,7 @@ class LaplacianBackend:
         opts = dict(options)
         if "method" not in opts:
             try:
-                from laplaciansolve._loader import has_cholmod
+                from purc.laplaciansolve._loader import has_cholmod
 
                 opts["method"] = "cholmod" if has_cholmod() else "auto"
             except Exception:  # pragma: no cover - defensive
@@ -135,7 +135,7 @@ class LaplacianBackend:
             res = self._purc.solve_step(to_numpy(w), eps=float(eps), rhs=to_numpy(rhs))
             return as_tensor(res["solution"])
 
-        from laplaciansolve import SDDMSolver, SolverConfig
+        from purc.laplaciansolve import SDDMSolver, SolverConfig
 
         M = self.assembler.assemble(to_numpy(w), float(eps))
         if self._solver is None:
@@ -169,7 +169,7 @@ class LaplacianBackend:
             # already-cheap CHOLMOD) is the path where this matters least.
             self._prep = (to_numpy(w), float(eps))
             return
-        from laplaciansolve import SDDMSolver, SolverConfig
+        from purc.laplaciansolve import SDDMSolver, SolverConfig
 
         M = self.assembler.assemble(to_numpy(w), float(eps))
         if self._solver is None:
@@ -236,7 +236,7 @@ class LaplacianBackend:
         rhs_np = to_numpy(rhs)  # [B, k]
         values = self.assembler.assemble_values_batch(w_np, eps_np)  # [B, nnz], shared pattern
         if self._batched is None:
-            from laplaciansolve import BatchedSDDMSolver, SolverConfig
+            from purc.laplaciansolve import BatchedSDDMSolver, SolverConfig
 
             m0 = self.assembler.assemble(w_np[0], float(eps_np[0]))
             self._batched = BatchedSDDMSolver(m0, config=SolverConfig(**self._options))

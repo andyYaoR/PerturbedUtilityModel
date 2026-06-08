@@ -18,21 +18,22 @@ Run:
 
 from __future__ import annotations
 
+import os
 import statistics
 import sys
 import time
 
 import numpy as np
 import torch
+from tntp import load_net
 
 from purc.static_purc import PUMProblem, SSNConfig
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.perturbations import get_perturbation
 from purc.static_purc.solvers import RegularizedSSNSolver
 from purc.static_purc.utils.torch_compat import to_numpy
-from tntp import load_net
 
-DATA = "/Users/ruiyao/Library/CloudStorage/Dropbox/Technion/Codes/LaplacianSolve/examples/data/"
+DATA = os.path.join(os.path.dirname(__file__), "..", "examples", "data") + os.sep
 NETS = {
     "sketch": DATA + "ChicagoSketch_net.tntp",
     "regional": DATA + "ChicagoRegional_net.tntp",

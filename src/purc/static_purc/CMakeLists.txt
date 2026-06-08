@@ -45,4 +45,4 @@ if(NOT MSVC)
   endif()
 endif()
 
-install(TARGETS _static_purc_core LIBRARY DESTINATION .)
+install(TARGETS _static_purc_core LIBRARY DESTINATION purc/static_purc)

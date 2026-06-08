@@ -9,6 +9,7 @@ across the claim experiments.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -20,7 +21,7 @@ from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.dgp import ODSpec
 from purc.static_purc.perturbations import get_perturbation
 
-DATA = "/Users/ruiyao/Library/CloudStorage/Dropbox/Technion/Codes/LaplacianSolve/examples/data/"
+DATA = os.path.join(os.path.dirname(__file__), "..", "examples", "data") + os.sep
 
 
 @dataclass(frozen=True)

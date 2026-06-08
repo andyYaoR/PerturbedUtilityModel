@@ -1,5 +1,8 @@
-# Build backend: scikit-build-core + CMake + nanobind (mirrors PUM / LaplacianSolve).
-# The native core links against the user's environment; always install editable with
+# Build backend: scikit-build-core + CMake + nanobind (mirrors PUM).  The top-level
+# CMakeLists builds BOTH native extensions -- the PURC core (src/purc/static_purc) and
+# the vendored Laplacian/SDDM solver (src/purc/laplaciansolve) -- in one shot, so a
+# single command installs everything (no separate sibling install).  The native cores
+# link against the user's environment, so always install editable with
 #   pip install --no-build-isolation -e .
 [build-system]
 requires = ["scikit-build-core>=0.10.0", "nanobind>=2.1.0"]
@@ -22,10 +25,9 @@ dependencies = [
     # sympy powers the symbolic perturbation compiler (auto-derive h', h'' and a
     # closed-form inverse of h'(xi)=eta when the gradient is strictly monotone).
     "sympy>=1.10",
-    # laplaciansolve provides the optimized, GIL-released linear solve used inside
-    # every semismooth Newton step.  It is a local sibling package; install it
-    # editable from ../LaplacianSolve before installing purcsolver.
-    "laplaciansolve>=0.0.1",
+    # The optimized, GIL-released Laplacian/SDDM linear solver used inside every inner
+    # Newton step is VENDORED in-tree as purc.laplaciansolve and built by this project's
+    # CMake -- no separate install step (its numpy/scipy/torch deps are already above).
 ]
 
 [project.optional-dependencies]
@@ -45,10 +47,13 @@ dev = [
 ]
 
 [tool.scikit-build]
-# The C++ core lives under src/purc/static_purc and installs into the
-# static_purc package directory; the pure-Python umbrella package is copied verbatim.
-cmake.source-dir = "src/purc/static_purc"
-wheel.install-dir = "purc/static_purc"
+# The top-level CMakeLists drives two native extensions (src/purc/static_purc and
+# src/purc/laplaciansolve); each installs its .so into its own package dir via
+# install(TARGETS ... DESTINATION purc/<pkg>), so install-dir is the wheel root.
+# The pure-Python umbrella package `purc` (which now contains purc.laplaciansolve)
+# is copied verbatim.
+cmake.source-dir = "."
+wheel.install-dir = "."
 wheel.packages = ["purc"]
 cmake.build-type = "Release"
 # Re-run CMake automatically on editable-install imports when sources change.
@@ -135,6 +140,8 @@ markers = [
     "performance: performance/benchmark tests excluded from default CI runs",
     "native: tests that require the compiled native core (skipped when unbuilt)",
     "oracle: tests that compare against a convex reference solver (cvxpy/scipy)",
+    "cuda: tests that require a CUDA device/build (skipped otherwise)",
+    "cross_language: tests that cross-check against the Julia reference (skipped otherwise)",
 ]
 filterwarnings = [
     "ignore:Sparse CSR tensor support is in beta:UserWarning",

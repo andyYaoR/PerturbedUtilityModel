@@ -22,6 +22,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import os
 import statistics
 import time
 
@@ -34,7 +35,7 @@ from purc.static_purc.perturbations import get_perturbation
 from purc.static_purc.solvers.ipm import IPMSolver
 from purc.static_purc.utils.torch_compat import to_numpy
 
-DATA = "/Users/ruiyao/Library/CloudStorage/Dropbox/Technion/Codes/LaplacianSolve/examples/data/"
+DATA = os.path.join(os.path.dirname(__file__), "..", "examples", "data") + os.sep
 GAMMA = np.array([0.5, 0.3, 0.1])  # convex polynomial-sieve shape (gamma >= 0)
 
 

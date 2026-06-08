@@ -30,22 +30,22 @@ import os
 import statistics
 import time
 
+import cvxpy as cp  # noqa: E402
 import numpy as np
 import scipy.sparse.csgraph as csg
+from tntp import load_net
 
 from purc.static_purc import PUMProblem, SSNConfig
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.perturbations import get_perturbation
 from purc.static_purc.solvers import get_solver
 from purc.static_purc.utils.torch_compat import to_numpy
-from tntp import load_net
-
-import cvxpy as cp  # noqa: E402
 
 PUM_NET = "/Users/ruiyao/Library/CloudStorage/Dropbox/Technion/Codes/PUM/examples/network"
 EXTRA = {
-    "Chicago-Regional": "/Users/ruiyao/Library/CloudStorage/Dropbox/Technion/Codes/"
-    "LaplacianSolve/examples/data/ChicagoRegional_net.tntp",
+    "Chicago-Regional": os.path.join(
+        os.path.dirname(__file__), "..", "examples", "data", "ChicagoRegional_net.tntp"
+    ),
 }
 
 # perturbation -> (constructor, cvxpy elementwise h or None, gamma)
@@ -224,7 +224,7 @@ def run(names, n_od, cvxpy_max_m, betas):
                     flush=True,
                 )
 
-    print(f"\n=== SUMMARY ===")
+    print("\n=== SUMMARY ===")
     print(f"cells: {total}   AutoSolver fully-converged: {converged}/{total}")
     print(f"CVXPY-comparable cells: {cvxpy_cmp}   AutoSolver >= CVXPY speed: {beaten}/{cvxpy_cmp}")
     if failures:
