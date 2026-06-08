@@ -4,38 +4,30 @@
 [![docs](https://github.com/andyYaoR/PerturbedUtilityModel/actions/workflows/docs.yml/badge.svg)](https://andyYaoR.github.io/PerturbedUtilityModel/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Perturbed-utility route-choice models with general polytope constraints — fast
-forward solvers and a debiased Fenchel–Young estimator.**
+**Perturbed utility models: estimation, inference, and prediction.**
 
-PURCSolver solves the perturbed-utility choice model — a strictly convex,
-regularized assignment of demand over a constraint polytope — and estimates its
-utility and perturbation parameters from observed choices. The forward solve runs on
-the model's convex dual, where each Newton step reduces to a symmetric diagonally
-dominant (SDDM) linear system (a weighted graph Laplacian on networks), factorized by
-the vendored, GIL-released [`purc.laplaciansolve`](purc/laplaciansolve) CHOLMOD
-backend.
+PURCSolver solves the perturbed-utility choice model over a constraint polytope — and estimates its
+utility and perturbation parameters from observed choices. 
 
 The package is **torch-native** (CPU `float64` by default, written
-device-agnostically) and accepts NumPy/SciPy inputs bridged zero-copy on CPU.
+device-agnostically) and accepts NumPy/SciPy inputs.
 
 ## Features
 
 - **Forward solvers** — a primal–dual interior-point method (IPM) and a dual
   semismooth Newton method, behind one `get_solver` entry point that selects the
   regime from a provable property of the kernel.
-- **Swappable perturbation kernels** — quadratic, Shannon / logit entropy, modified
-  entropy, and a flexible **polynomial sieve** (with a Bernstein convexity
+- **Multiple perturbation kernels** — quadratic, Shannon / logit entropy, modified
+  entropy, and a flexible polynomial sieve (with a Bernstein convexity
   certificate), via a simple registry.
-- **General polytope constraints** — arbitrary sparse `A x = b, l ≤ x ≤ u`, with a
-  fast node-arc-incidence (network) path.
+- **General polytope constraints** — arbitrary sparse `A x = b, l ≤ x ≤ u`.
 - **Debiased Fenchel–Young estimator** — recovers the utility coefficients and the
   perturbation shape from observed choice frequencies, with sandwich standard
-  errors; the gradient is a residual built from `x*` (no `dx*/dθ` sensitivities).
-- **Native C++ hot paths** (nanobind), correctness cross-checked against CVXPY.
+  errors.
 
 ## The problem
 
-For parameters `θ = (β, γ)`, solve the strictly-convex separable program
+For parameters `θ = (β, γ)`, solve the strictly-convex program
 
 ```
 min_x  F(x; γ) − v(β)ᵀ x      s.t.   A x = b,   l ≤ x ≤ u
@@ -50,7 +42,7 @@ per-coordinate primal recovery `x̂_i(λ) = ξ*(η_i; γ)`, and each Newton step
 ```
 
 where the matrix is SPD — a **weighted graph Laplacian** when `A` is a node-arc
-incidence matrix — and is factorized by CHOLMOD.
+incidence matrix — and can be solved efficiently at scale.
 
 ## Quick start
 
@@ -91,30 +83,13 @@ conda activate purc
 pip install --no-build-isolation -e ".[dev]"
 ```
 
-Without conda (Linux/macOS), install SuiteSparse from your package manager first
-(`brew install suite-sparse` / `apt install libsuitesparse-dev`), then
-`pip install --no-build-isolation -e ".[dev]"`. CUDA is an optional, auto-detected
-accelerator. The full per-platform walkthrough (including an HPC `-march=native` note)
+The full per-platform walkthrough (including an HPC `-march=native` note)
 is in the [documentation](https://andyYaoR.github.io/PerturbedUtilityModel/).
 
 ## Documentation
 
-Full documentation — getting started, worked examples, and the API reference — lives
-at **https://andyYaoR.github.io/PerturbedUtilityModel/** and builds locally with:
+Full documentation is at **https://andyYaoR.github.io/PerturbedUtilityModel/**.
 
-```bash
-make docs        # -> docs/sphinx/_build/html/index.html
-```
-
-## Development
-
-```bash
-make test         # pytest
-make test-native  # native parity tests
-make lint         # ruff + pydocstyle + darglint
-make format       # ruff format + autofix
-pre-commit install
-```
 
 ## License
 
