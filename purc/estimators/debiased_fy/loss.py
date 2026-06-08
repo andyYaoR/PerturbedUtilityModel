@@ -122,19 +122,28 @@ class DebiasedFYLoss:
         """
         beta, c = self.layout.unpack(theta)
         gamma = self.basis.to_monomial(c)  # monomial coeffs for the solver (gamma = T c)
-        # Q_B is finite for every gamma (the surplus is a max over a compact
-        # polytope); Gamma_B is a *constraint*, not the domain of an extended-value
-        # objective.  But the primal interior-point forward solver requires a
-        # strictly convex sieve (h'' > 0, i.e. gamma in Gamma_B) for its normal
-        # equations to be positive definite, so for gamma outside Gamma_B we return a
-        # non-finite *sentinel* (not the true value) instead of attempting an
-        # ill-posed solve.  The optimizer only evaluates feasible iterates; this is
-        # reached only by a finite-difference probe straddling the Gamma_B boundary,
-        # which the Hessian then differences one-sidedly.
+        # ``x*(theta)`` is only *computable* on the strict-convexity interior, so we
+        # treat ``Q_B`` as an extended-value objective: ``+inf`` (a sentinel, not the
+        # true value) wherever the forward solve is not well posed.  Two disjoint
+        # cases reach it: (i) ``gamma`` outside ``Gamma_B`` (non-convex sieve,
+        # ``h'' >/< 0``) -- an *analytic* infeasibility caught a priori by the
+        # Bernstein certificate; (ii) ``gamma`` on the convexity boundary
+        # (``min h'' -> 0`` with corner-saturated flows), where the inner normal
+        # equations are singular beyond float64.  Case (ii) is a *hidden constraint*:
+        # it cannot be certified a priori (a strong-convexity margin still crashes,
+        # and no Levenberg-Marquardt ``eps`` well-poses an indefinite/degenerate
+        # system -- tested to ``1e12``), so only the solve *attempt* decides, and a
+        # failed solve is reported as ``+inf``.  The optimizer's backtracking (the
+        # trust-region ratio test / Armijo) rejects such steps and routes around the
+        # region; these are transient early probes, so the converged estimate -- from
+        # clean interior solves -- is unaffected (the gradient there is unused).
+        nan = torch.full((self.layout.size,), float("nan"), dtype=DEFAULT_DTYPE)
         if gamma.numel() > 0 and not is_convex(to_numpy(gamma)):
-            nan = torch.full((self.layout.size,), float("nan"), dtype=DEFAULT_DTYPE)
             return float("inf"), nan
-        xstar, fstar = self._solve(beta, gamma)  # [B, N], [B]
+        try:
+            xstar, fstar = self._solve(beta, gamma)  # [B, N], [B]
+        except (np.linalg.LinAlgError, RuntimeError, ValueError):
+            return float("inf"), nan
         v = self.problem.utility(beta).to(DEFAULT_DTYPE).reshape(-1)  # [N]
 
         prim = torch.zeros(self.B, dtype=DEFAULT_DTYPE)

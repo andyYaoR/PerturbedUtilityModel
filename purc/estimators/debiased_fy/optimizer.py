@@ -178,9 +178,19 @@ class DebiasedFYEstimator(Estimator):
                 # the projected gradient is always a descent direction for convex Q.
                 theta_new, accepted = line_search(g)
             step_norm = float((theta_new - theta).abs().max())
-            q_prev = Q
+            q_prev, theta_prev, g_prev = Q, theta, g
             theta = theta_new
             Q, g = loss.value_and_grad(theta)
+            if not (Q < float("inf")):
+                # The accepted step landed in the non-computable region (Q = +inf): the
+                # inner solve there is ill posed, and a warm-start boundary
+                # inconsistency let the line search's value() succeed while this
+                # re-evaluation fails.  Revert to the last computable iterate and stop
+                # with an honest non-convergence -- NOT a stall at the optimum (the
+                # default trust-region solver backtracks around such regions; the
+                # FD-Hessian Newton path simply declines them).
+                theta, Q, g, converged = theta_prev, q_prev, g_prev, False
+                break
             # Projected gradient mapping (handles active gamma bounds).
             gmap = theta - self._project(theta - g, layout)
             ginf = float(gmap.abs().max())
