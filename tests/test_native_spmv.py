@@ -2,9 +2,10 @@
 Native CSR SpMV parity tests.
 
 The hot-path matvec ``A @ x`` (and ``A^T @ lambda``) uses a GIL-released native
-float64 kernel when the core is built.  These tests assert it is bit-exact
-against SciPy and that the polytope's ``matvec`` / ``rmatvec`` agree with the
-dense product, on rectangular and rank-deficient matrices.
+float64 kernel when the core is built.  These tests assert it matches SciPy to
+floating-point precision (``-march=native`` enables FMA, which breaks bit-exact
+equality) and that the polytope's ``matvec`` / ``rmatvec`` agree with the dense
+product, on rectangular and rank-deficient matrices.
 """
 
 from __future__ import annotations
@@ -27,11 +28,11 @@ def test_csrmatvec_matches_scipy(shape):
     A.data = rng.standard_normal(A.nnz)
     x = rng.standard_normal(shape[1])
     mv = CSRMatVec(A)
-    np.testing.assert_array_equal(mv.matvec(x), A @ x)  # bit-exact
+    np.testing.assert_allclose(mv.matvec(x), A @ x, rtol=1e-9, atol=1e-12)
 
 
 @pytest.mark.native
-def test_native_csr_spmv_kernel_bit_exact():
+def test_native_csr_spmv_kernel_matches_scipy():
     if not purcsolver.native_available():
         pytest.skip("native core not built")
     from purc.static_purc.utils.native import native_core
@@ -49,7 +50,7 @@ def test_native_csr_spmv_kernel_bit_exact():
         x,
         y,
     )
-    np.testing.assert_array_equal(y, A @ x)
+    np.testing.assert_allclose(y, A @ x, rtol=1e-9, atol=1e-12)
 
 
 def test_polytope_matvec_rmatvec_match_dense():
