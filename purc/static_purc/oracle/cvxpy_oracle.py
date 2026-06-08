@@ -2,7 +2,7 @@ r"""
 CVXPY reference oracle.
 
 Builds the equivalent disciplined-convex program for a perturbation that exposes
-a :meth:`~purcsolver.perturbations.base.SeparablePerturbation.cvxpy_h` expression
+a :meth:`~purc.static_purc.perturbations.base.SeparablePerturbation.cvxpy_h` expression
 (quadratic, entropy, modified entropy, ...) and solves it with a high-accuracy
 conic solver.  Its solution is an independent ground truth for the SSN solver --
 independent because it shares no code path with the semismooth Newton iteration.

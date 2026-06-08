@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import purc.static_purc as purcsolver
-from purc.static_purc import PUMProblem, PURCResult, SSNConfig
+from purc.static_purc import ForwardSolverConfig, PUMProblem, PURCResult
 from purc.static_purc.result import STATUS_CONVERGED, STATUS_MAX_ITER
 
 
@@ -39,7 +39,7 @@ def test_registries_resolve_helpers():
 
 
 def test_ssnconfig_defaults_valid():
-    cfg = SSNConfig()
+    cfg = ForwardSolverConfig()
     assert cfg.tol > 0
     assert 0 < cfg.eps_floor <= cfg.eps0
     assert 0 < cfg.armijo_c1 < 0.5
@@ -60,7 +60,7 @@ def test_ssnconfig_defaults_valid():
 )
 def test_ssnconfig_rejects_bad_params(kwargs):
     with pytest.raises(ValueError):
-        SSNConfig(**kwargs)
+        ForwardSolverConfig(**kwargs)
 
 
 def test_purcresult_default_message_from_status():

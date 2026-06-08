@@ -32,7 +32,7 @@ This is robust for **every** strictly-convex kernel, including Legendre-type one
 (Shannon / logit entropy) whose ``h'`` diverges at a box face: the primal is
 recovered as an *interior* root of a monotone equation, so ``h'`` is never
 evaluated at the singular bound (contrast the primal interior-point method in
-:mod:`purcsolver.solvers.ipm`, which steps ``x`` in the primal and is therefore
+:mod:`purc.static_purc.solvers.ipm`, which steps ``x`` in the primal and is therefore
 restricted by :meth:`SeparablePerturbation.admits_primal_interior`).
 
 A short geometric continuation ``mu <- mu_factor * mu`` (warm-started across
@@ -48,7 +48,7 @@ from typing import Optional, Tuple
 import torch
 
 from ..backends.routing import LaplacianBackend
-from ..config import SSNConfig
+from ..config import ForwardSolverConfig
 from ..problem import PUMProblem
 from ..result import STATUS_CONVERGED, STATUS_MAX_ITER, PURCResult
 from ..utils.logging import get_logger
@@ -95,7 +95,7 @@ class BarrierContinuationSolver(ForwardSolver):
 
     def __init__(
         self,
-        config: Optional[SSNConfig] = None,
+        config: Optional[ForwardSolverConfig] = None,
         *,
         mu_min: float = 1e-8,
         mu_factor: float = 0.1,

@@ -14,7 +14,7 @@ constraints, and the SSN solver are added in M1+.
 
 from __future__ import annotations
 
-from .config import SSNConfig
+from .config import ForwardSolverConfig
 from .problem import PUMProblem
 from .result import PURCResult
 from .utils.logging import configure_logging, get_logger, logger
@@ -54,7 +54,7 @@ def __getattr__(name: str):
 
 __all__ = [
     "__version__",
-    "SSNConfig",
+    "ForwardSolverConfig",
     "PUMProblem",
     "PURCResult",
     "SeparablePerturbation",

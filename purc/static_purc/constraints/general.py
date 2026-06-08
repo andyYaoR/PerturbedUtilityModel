@@ -9,7 +9,7 @@ is gauge-invariant regardless.  The only feasibility precondition we check is
 ``b in range(A)`` (otherwise the residual can never reach zero).
 
 The matrix is held as a SciPy CSR (for the SciPy-only consumers: the CSC pattern
-build, feasibility, the cvxpy oracle) plus a :class:`~purcsolver.utils.spmv.CSRMatVec`
+build, feasibility, the cvxpy oracle) plus a :class:`~purc.static_purc.utils.spmv.CSRMatVec`
 for ``A`` and ``A^T`` (the native CSR SpMV used for the hot-path matvecs).  Node-arc
 incidence structure is auto-detected so the solver can route to LaplacianSolve's
 fast ``PURCLaplacianSolver`` network path.

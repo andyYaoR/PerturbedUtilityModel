@@ -1,0 +1,4 @@
+# Sphinx documentation dependencies for PURCSolver.
+# Build with: pip install -r requirements-docs-sphinx.txt && make -C docs/sphinx html
+sphinx>=7.0.0
+furo>=2024.0.0

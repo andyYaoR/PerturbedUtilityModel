@@ -14,7 +14,7 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc import ForwardSolverConfig, PUMProblem
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.perturbations import get_perturbation
 from purc.static_purc.solvers import RegularizedSSNSolver
@@ -61,7 +61,7 @@ def test_batch_matches_per_system_loop(kernel):
     )
     bb = _demands(n, 12, seed=2)
 
-    solver = RegularizedSSNSolver(SSNConfig(tol=1e-9))
+    solver = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-9))
     solver.preprocess(prob)
     res = solver.solve_batch((v, gamma), bb, lam0=np.zeros((12, n)))
     assert res.success
@@ -69,7 +69,7 @@ def test_batch_matches_per_system_loop(kernel):
 
     x_loop = np.empty((12, m))
     for i in range(12):
-        s = RegularizedSSNSolver(SSNConfig(tol=1e-9))
+        s = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-9))
         s.preprocess(prob)
         x_loop[i] = to_numpy(s.solve((v, gamma), b=bb[i], lam0=np.zeros(n)).x)
     np.testing.assert_allclose(to_numpy(res.x), x_loop, atol=1e-7)
@@ -82,7 +82,7 @@ def test_batch_shapes_and_conjugate():
     poly = GeneralPolytope(A, np.zeros(n), validate=False)
     prob = PUMProblem(get_perturbation("entropy"), poly)
     bb = _demands(n, 5, seed=4)
-    solver = RegularizedSSNSolver(SSNConfig(tol=1e-9))
+    solver = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-9))
     solver.preprocess(prob)
     res = solver.solve_batch((v, torch.zeros(0)), bb)
     assert tuple(res.x.shape) == (5, m)
@@ -109,10 +109,10 @@ def test_single_solver_does_not_prematurely_stall():
     poly = GeneralPolytope(A, np.zeros(n), validate=False)
     prob = PUMProblem(get_perturbation("polynomial_sieve", gamma=gamma), poly)
     bb = _demands(n, 16, seed=0)
-    solver = RegularizedSSNSolver(SSNConfig(tol=1e-9))
+    solver = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-9))
     solver.preprocess(prob)
     for i in range(16):
-        s = RegularizedSSNSolver(SSNConfig(tol=1e-9))
+        s = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-9))
         s.preprocess(prob)
         res = s.solve((v, gamma), b=bb[i], lam0=np.zeros(n))
         assert res.success, f"OD-pair {i} failed to converge (residual {res.residual})"

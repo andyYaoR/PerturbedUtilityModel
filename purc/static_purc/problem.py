@@ -33,8 +33,8 @@ class PUMProblem:
     common case for a small hand-built problem or a fixed utility vector.
 
     Args:
-        perturbation: A :class:`~purcsolver.perturbations.base.SeparablePerturbation`.
-        constraint: A :class:`~purcsolver.constraints.base.Polytope`.
+        perturbation: A :class:`~purc.static_purc.perturbations.base.SeparablePerturbation`.
+        constraint: A :class:`~purc.static_purc.constraints.base.Polytope`.
         Z: Optional ``(N, K)`` link-attribute matrix mapping ``beta`` to link
             utilities ``v = Z @ beta``.  Dense array or scipy sparse.  ``None``
             means ``v = beta`` (so ``K = N``).

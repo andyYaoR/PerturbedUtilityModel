@@ -1,4 +1,4 @@
-.PHONY: help lint format check-docs test test-native build clean
+.PHONY: help lint format check-docs test test-native build docs clean
 
 # Python sources that the linters and docstring checkers police.
 PYSRC = purc/
@@ -11,6 +11,7 @@ help:
 	@echo "  make check-docs  - Check docstring style with pydocstyle"
 	@echo "  make test        - Run the Python test suite"
 	@echo "  make test-native - Build the native core and run its parity tests"
+	@echo "  make docs        - Build the HTML documentation (Sphinx)"
 	@echo "  make clean       - Clean build artifacts and caches"
 
 build:
@@ -38,10 +39,14 @@ test:
 test-native:
 	pytest tests/ -v -m native
 
+docs:
+	$(MAKE) -C docs/sphinx html
+	@echo "Docs built: docs/sphinx/_build/html/index.html"
+
 clean:
 	find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
 	find . -type d -name ".pytest_cache" -exec rm -r {} + 2>/dev/null || true
 	find . -type d -name ".ruff_cache" -exec rm -r {} + 2>/dev/null || true
 	find . -type d -name ".mypy_cache" -exec rm -r {} + 2>/dev/null || true
-	rm -rf build/ dist/
+	rm -rf build/ dist/ docs/sphinx/_build

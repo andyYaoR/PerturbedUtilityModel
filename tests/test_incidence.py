@@ -14,7 +14,7 @@ import numpy as np
 import scipy.sparse as sp
 import torch
 
-from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc import ForwardSolverConfig, PUMProblem
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.perturbations import get_perturbation
 from purc.static_purc.solvers import RegularizedSSNSolver
@@ -47,7 +47,7 @@ def test_incidence_auto_detected_and_routed():
     poly = GeneralPolytope(sp.csr_matrix(CYCLE_INC), np.array([1.0, 0.0, 0.0, -1.0]))
     assert poly.is_incidence
     prob = PUMProblem(get_perturbation("entropy"), poly)
-    solver = RegularizedSSNSolver(SSNConfig())
+    solver = RegularizedSSNSolver(ForwardSolverConfig())
     solver.preprocess(prob)
     res = solver.solve((-np.array([0.5, 0.4, 0.3, 1.1, 1.0]), torch.zeros(0)))
     assert res.success
@@ -64,7 +64,7 @@ def test_purc_path_matches_general_path():
     for detect in (True, False):
         poly = GeneralPolytope(sp.csr_matrix(CYCLE_INC), b, ell=ell, detect_incidence=detect)
         prob = PUMProblem(get_perturbation("polynomial_sieve", gamma=gamma), poly)
-        solver = RegularizedSSNSolver(SSNConfig(tol=1e-10))
+        solver = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-10))
         solver.preprocess(prob)
         xs[detect] = to_numpy(solver.solve((v, gamma)).x)
     np.testing.assert_allclose(xs[True], xs[False], atol=1e-8)
@@ -74,7 +74,7 @@ def test_acyclic_network_uses_forest():
     poly = GeneralPolytope(sp.csr_matrix(TREE_INC), np.array([1.0, 0.0, 0.0, -1.0, 0.0]))
     assert poly.is_incidence
     prob = PUMProblem(get_perturbation("entropy"), poly)
-    solver = RegularizedSSNSolver(SSNConfig())
+    solver = RegularizedSSNSolver(ForwardSolverConfig())
     solver.preprocess(prob)
     # The full tree is acyclic, so PURCLaplacianSolver routes to the forest path.
     assert solver._backend.method == "forest"

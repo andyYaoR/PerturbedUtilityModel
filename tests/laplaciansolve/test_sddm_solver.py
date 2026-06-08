@@ -1,14 +1,13 @@
 """
-Stage 3 tests: the reusable SDDMSolver handle + the SiouxFalls example.
+Stage 3 tests: the reusable SDDMSolver handle on PURC Newton matrices.
 
 Covers the PURC matrix M = H + eps*I: exactness vs a dense solve, batched solve,
 re-solve after a weight/regularizer update, torch I/O, and an end-to-end check
-on the SiouxFalls network with a quadratic perturbation (the example's loader).
+on the SiouxFalls network with a quadratic perturbation.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import os
 
 import numpy as np
@@ -130,31 +129,73 @@ def test_cholmod_update_and_batch():
         assert np.linalg.norm(m2 @ xb[i] - rhs[i]) / np.linalg.norm(rhs[i]) < 1e-9
 
 
-def _load_example():
+_SIOUXFALLS = os.path.join(
+    os.path.dirname(__file__), "..", "..", "examples", "data", "SiouxFalls_net.tntp"
+)
+
+
+def _load_tntp_links(path):
     """
-    Import the SiouxFalls example module by path.
+    Parse a TNTP ``_net`` file into ``(n_nodes, [(init, term, length), ...])``.
+
+    Args:
+        path: Path to the ``*_net.tntp`` file.
 
     Returns:
-        The imported example module.
+        The node count and the directed link list (1-based nodes, link length).
 
     """
-    path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "examples", "siouxfalls_laplacian_solve.py"
-    )
-    spec = importlib.util.spec_from_file_location("sf_example", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    n_nodes = 0
+    links = []
+    in_data = False
+    with open(path) as fh:
+        for raw in fh:
+            line = raw.strip()
+            if line.upper().startswith("<NUMBER OF NODES>"):
+                n_nodes = int(line.split()[-1])
+            if line.startswith("<END OF METADATA>"):
+                in_data = True
+                continue
+            if not in_data or not line or line.startswith("~"):
+                continue
+            parts = line.replace(";", "").split()
+            if len(parts) < 5:
+                continue
+            links.append((int(parts[0]), int(parts[1]), float(parts[3])))
+    return n_nodes, links
+
+
+def _weighted_adjacency(n_nodes, links):
+    """
+    Build the symmetric adjacency with quadratic-perturbation weights ``1/length``.
+
+    Args:
+        n_nodes: Number of network nodes.
+        links: Directed links ``(init, term, length)`` (1-based nodes).
+
+    Returns:
+        The symmetric, zero-diagonal weighted adjacency (CSC).
+
+    """
+    weight = {}
+    for init, term, length in links:
+        u, v = init - 1, term - 1
+        weight[(min(u, v), max(u, v))] = 1.0 / length
+    rows, cols, data = [], [], []
+    for (u, v), w in weight.items():
+        rows += [u, v]
+        cols += [v, u]
+        data += [w, w]
+    return sparse.csc_matrix((data, (rows, cols)), shape=(n_nodes, n_nodes))
 
 
 def test_siouxfalls_quadratic_laplacian_solve():
     """End-to-end: SiouxFalls quadratic-perturbation Newton matrix solves exactly."""
-    sf = _load_example()
-    n_nodes, links = sf.load_tntp_links(sf._DATA)
+    n_nodes, links = _load_tntp_links(_SIOUXFALLS)
     assert n_nodes == 24
     assert len(links) == 76  # directed links
 
-    adjacency = sf.build_weighted_laplacian_adjacency(n_nodes, links)
+    adjacency = _weighted_adjacency(n_nodes, links)
     assert adjacency.shape == (24, 24)
     assert abs(adjacency - adjacency.T).nnz == 0  # symmetric
 

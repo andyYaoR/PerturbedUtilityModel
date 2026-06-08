@@ -19,7 +19,7 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc import ForwardSolverConfig, PUMProblem
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.perturbations import get_perturbation
 from purc.static_purc.solvers import AutoSolver, BarrierContinuationSolver, IPMSolver
@@ -109,7 +109,7 @@ def test_rule_depends_on_box_not_kernel_name():
 def test_ipm_rejects_legendre_kernel(kernel):
     """The primal IPM raises a clear precondition error (no NaN) on Legendre kernels."""
     prob, _ = _network_problem(kernel)
-    solver = IPMSolver(SSNConfig(tol=1e-9))
+    solver = IPMSolver(ForwardSolverConfig(tol=1e-9))
     with pytest.raises(ValueError, match="essentially smooth"):
         solver.preprocess(prob)
 
@@ -122,7 +122,7 @@ def test_ipm_accepts_smooth_on_box_kernel(kernel):
         if kernel != "polynomial_sieve"
         else (_network_sieve())
     )
-    IPMSolver(SSNConfig(tol=1e-9)).preprocess(prob)  # must not raise
+    IPMSolver(ForwardSolverConfig(tol=1e-9)).preprocess(prob)  # must not raise
 
 
 def _network_sieve(seed=1):
@@ -149,7 +149,7 @@ def test_auto_routes_by_rule(kernel):
         prob, _ = _network_sieve()
     else:
         prob, _ = _network_problem(kernel)
-    solver = AutoSolver(SSNConfig(tol=1e-9))
+    solver = AutoSolver(ForwardSolverConfig(tol=1e-9))
     solver.preprocess(prob)
     assert solver.regime == ("ipm" if kernel in SMOOTH_ON_BOX else "ssn")
 
@@ -159,7 +159,7 @@ def test_auto_routes_by_rule(kernel):
 def test_auto_matches_cvxpy_oracle(kernel, cname):
     """The unified solver converges and matches the CVXPY oracle on every kernel."""
     prob, v = CONSTRAINTS[cname](kernel)
-    solver = AutoSolver(SSNConfig(tol=1e-10, max_iter=200))
+    solver = AutoSolver(ForwardSolverConfig(tol=1e-10, max_iter=200))
     solver.preprocess(prob)
     res = solver.solve((v, NO_GAMMA))
     assert res.success
@@ -174,7 +174,7 @@ def test_auto_matches_cvxpy_oracle(kernel, cname):
 def test_barrier_backstop_matches_oracle(kernel, cname):
     """The barrier-continuation backstop is robust on every kernel (incl. Legendre)."""
     prob, v = CONSTRAINTS[cname](kernel)
-    solver = BarrierContinuationSolver(SSNConfig(tol=1e-10, max_iter=300))
+    solver = BarrierContinuationSolver(ForwardSolverConfig(tol=1e-10, max_iter=300))
     solver.preprocess(prob)
     res = solver.solve((v, NO_GAMMA))
     assert res.success

@@ -4,7 +4,7 @@ Shared type aliases for PURCSolver.
 The package is torch-native: tensors are the primary data type on the public API
 and throughout the solver (CPU ``float64`` by default, written
 device-agnostically).  NumPy/SciPy appear only behind zero-copy bridges (see
-:mod:`purcsolver.utils.torch_compat`) for the few dependencies that require them.
+:mod:`purc.static_purc.utils.torch_compat`) for the few dependencies that require them.
 """
 
 from __future__ import annotations

@@ -27,7 +27,7 @@ import pytest
 import scipy.sparse as sp
 
 from purc.static_purc import PUMProblem
-from purc.static_purc.config import SSNConfig
+from purc.static_purc.config import ForwardSolverConfig
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.oracle import solve_scipy
 from purc.static_purc.perturbations import get_perturbation
@@ -79,7 +79,7 @@ def test_batch_matches_per_od(crossover, ell_spread, vscale):
     rng = np.random.default_rng(7)
     v = -rng.uniform(0.0, vscale, inc.shape[1])
     b_batch = np.stack(ods)
-    cfg = SSNConfig(max_iter=300)
+    cfg = ForwardSolverConfig(max_iter=300)
 
     prob = _problem(inc, ell, ods[0])
     batched = IPMSolver(cfg, crossover=crossover, safeguard=True)
@@ -105,7 +105,7 @@ def test_batch_matches_scipy_oracle(ell_spread, vscale):
     ods = _ods(n, 5, 3)
     rng = np.random.default_rng(11)
     v = -rng.uniform(0.0, vscale, inc.shape[1])
-    cfg = SSNConfig(max_iter=300)
+    cfg = ForwardSolverConfig(max_iter=300)
 
     batched = IPMSolver(cfg, crossover=True, safeguard=True)
     batched.preprocess(_problem(inc, ell, ods[0]))
@@ -139,7 +139,7 @@ def test_batch_matches_cvxpy_clarabel(ell_spread, vscale):
     ods = _ods(n, 5, 23)
     v = -np.random.default_rng(29).uniform(0.0, vscale, inc.shape[1])
     prob = _problem(inc, ell, ods[0])
-    batched = IPMSolver(SSNConfig(max_iter=300), crossover=True, safeguard=True)
+    batched = IPMSolver(ForwardSolverConfig(max_iter=300), crossover=True, safeguard=True)
     batched.preprocess(prob)
     xb = to_numpy(batched.solve_batch((v, GAMMA), np.stack(ods)).x)
     A = prob.constraint.A
@@ -154,7 +154,7 @@ def test_batch_extras_and_converged_mask():
     inc, ell = _network(14, 4, 4.0)
     ods = _ods(inc.shape[0], 5, 5)
     v = -np.random.default_rng(13).uniform(0.0, 30.0, inc.shape[1])
-    batched = IPMSolver(SSNConfig(max_iter=300), crossover=False, safeguard=True)
+    batched = IPMSolver(ForwardSolverConfig(max_iter=300), crossover=False, safeguard=True)
     batched.preprocess(_problem(inc, ell, ods[0]))
     r = batched.solve_batch((v, GAMMA), np.stack(ods))
     assert r.extras["n_systems"] == len(ods)
@@ -173,7 +173,7 @@ def test_batch_warm_start_reduces_iterations():
     ods = _ods(inc.shape[0], 6, 7)
     b_batch = np.stack(ods)
     v = -np.random.default_rng(17).uniform(0.0, 30.0, inc.shape[1])
-    cfg = SSNConfig(max_iter=300)
+    cfg = ForwardSolverConfig(max_iter=300)
     solver = IPMSolver(cfg, crossover=False, safeguard=True)
     solver.preprocess(_problem(inc, ell, ods[0]))
 
@@ -192,7 +192,7 @@ def test_unsafeguarded_batch_converges():
     inc, ell = _network(14, 8, 2.0)
     ods = _ods(inc.shape[0], 5, 9)
     v = -np.random.default_rng(19).uniform(0.0, 30.0, inc.shape[1])
-    batched = IPMSolver(SSNConfig(max_iter=300), crossover=False, safeguard=False)
+    batched = IPMSolver(ForwardSolverConfig(max_iter=300), crossover=False, safeguard=False)
     batched.preprocess(_problem(inc, ell, ods[0]))
     r = batched.solve_batch((v, GAMMA), np.stack(ods))
     assert r.success and r.residual < 1e-6
@@ -227,7 +227,7 @@ def test_general_sddm_batch_matches_per_od():
     inc, ell = _multigraph(15, 5)
     ods = _ods(inc.shape[0], 6, 4)
     v = -np.random.default_rng(13).uniform(0.0, 30.0, inc.shape[1])
-    cfg = SSNConfig(max_iter=300)
+    cfg = ForwardSolverConfig(max_iter=300)
     batched = IPMSolver(cfg, crossover=False, safeguard=True)
     batched.preprocess(_problem(inc, ell, ods[0]))
     assert batched._backend.kind == "sddm"  # the general path, exercised on purpose

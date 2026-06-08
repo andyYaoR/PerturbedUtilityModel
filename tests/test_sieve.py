@@ -16,7 +16,7 @@ import scipy.sparse as sp
 import sympy as sp_sym
 import torch
 
-from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc import ForwardSolverConfig, PUMProblem
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.oracle import solve_scipy
 from purc.static_purc.perturbations import get_perturbation
@@ -94,7 +94,7 @@ def test_sieve_solver_matches_scipy_oracle(gamma, geometry):
     poly, v = _network() if geometry == "network" else _simplex()
     gamma = np.array(gamma)
     prob = PUMProblem(get_perturbation("polynomial_sieve", gamma=gamma), poly)
-    solver = RegularizedSSNSolver(SSNConfig(tol=1e-10))
+    solver = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-10))
     solver.preprocess(prob)
     res = solver.solve((v, gamma))
     assert res.success
@@ -165,6 +165,6 @@ def test_symbolic_perturbation_solves_like_sieve():
 
 
 def _solve(prob, v, gamma):
-    solver = RegularizedSSNSolver(SSNConfig(tol=1e-10))
+    solver = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-10))
     solver.preprocess(prob)
     return solver.solve((v, gamma))

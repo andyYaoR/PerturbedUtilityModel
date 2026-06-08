@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
-from ..config import SSNConfig
+from ..config import ForwardSolverConfig
 from ..problem import PUMProblem
 from ..result import PURCResult
 from ..utils.logging import get_logger
@@ -68,7 +68,7 @@ class AutoSolver(ForwardSolver):
 
     """
 
-    def __init__(self, config: Optional[SSNConfig] = None) -> None:
+    def __init__(self, config: Optional[ForwardSolverConfig] = None) -> None:
         super().__init__(config)
         self._engine: Optional[ForwardSolver] = None
         self._fallback: Optional[BarrierContinuationSolver] = None

@@ -8,7 +8,7 @@ loop -- which sweeps slightly varying ``theta = (beta, gamma)`` across many
 right-hand sides -- reuses the persistent factorization/symbolic pattern and the
 warm-started multipliers.
 
-The solver returns a :class:`~purcsolver.result.PURCResult` carrying the primal
+The solver returns a :class:`~purc.static_purc.result.PURCResult` carrying the primal
 ``x*`` and the conjugate value ``F*``; by the Fenchel-Young envelope property
 those are everything the estimation gradient needs, so no ``dx*/dtheta``
 sensitivity machinery lives in the solver core.
@@ -19,7 +19,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
-from ..config import SSNConfig
+from ..config import ForwardSolverConfig
 from ..problem import PUMProblem
 from ..result import PURCResult
 from ..utils.typing import ArrayLike
@@ -34,8 +34,8 @@ class ForwardSolver(ABC):
 
     """
 
-    def __init__(self, config: Optional[SSNConfig] = None) -> None:
-        self.config = config or SSNConfig()
+    def __init__(self, config: Optional[ForwardSolverConfig] = None) -> None:
+        self.config = config or ForwardSolverConfig()
         self._problem: Optional[PUMProblem] = None
 
     @abstractmethod

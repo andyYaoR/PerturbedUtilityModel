@@ -118,7 +118,7 @@ def test_ipm_backtracking_native_matches_torch_fallback():
     import scipy.sparse as sp
 
     import purc.static_purc.solvers.ipm as ipmmod
-    from purc.static_purc import PUMProblem, SSNConfig
+    from purc.static_purc import ForwardSolverConfig, PUMProblem
     from purc.static_purc.constraints import GeneralPolytope
     from purc.static_purc.perturbations import get_perturbation
     from purc.static_purc.solvers.ipm import IPMSolver
@@ -148,14 +148,14 @@ def test_ipm_backtracking_native_matches_torch_fallback():
         pert = get_perturbation("polynomial_sieve", gamma=gamma)
         return PUMProblem(pert, GeneralPolytope(sp.csr_matrix(inc), d, ell=ell))
 
-    s = IPMSolver(SSNConfig(max_iter=300), crossover=False, safeguard=True)
+    s = IPMSolver(ForwardSolverConfig(max_iter=300), crossover=False, safeguard=True)
     s.preprocess(_problem(ods[0]))
     x_native = to_numpy(s.solve_batch((v, gamma), b_batch).x)
 
     saved = ipmmod.native_available
     ipmmod.native_available = lambda: False  # force the torch backtracking loops
     try:
-        s2 = IPMSolver(SSNConfig(max_iter=300), crossover=False, safeguard=True)
+        s2 = IPMSolver(ForwardSolverConfig(max_iter=300), crossover=False, safeguard=True)
         s2.preprocess(_problem(ods[0]))
         x_torch = to_numpy(s2.solve_batch((v, gamma), b_batch).x)
     finally:

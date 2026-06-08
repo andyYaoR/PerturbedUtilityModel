@@ -17,7 +17,7 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc import ForwardSolverConfig, PUMProblem
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.perturbations import get_perturbation
 from purc.static_purc.solvers import RegularizedSSNSolver
@@ -63,7 +63,7 @@ def case(request):
 
 
 def _solve(prob, v, **cfg):
-    solver = RegularizedSSNSolver(SSNConfig(tol=1e-10, **cfg))
+    solver = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-10, **cfg))
     solver.preprocess(prob)
     return solver, solver.solve((v, NO_GAMMA))
 
@@ -109,7 +109,7 @@ def test_warm_start_consistency(case):
     """Cold and warm starts reach the same primal solution."""
     _, _, prob, v = case
     _, res_cold = _solve(prob, v)
-    solver_warm = RegularizedSSNSolver(SSNConfig(tol=1e-10, warm_start=True))
+    solver_warm = RegularizedSSNSolver(ForwardSolverConfig(tol=1e-10, warm_start=True))
     solver_warm.preprocess(prob)
     solver_warm.solve((v, NO_GAMMA))  # populate warm start
     res_warm = solver_warm.solve((v, NO_GAMMA))

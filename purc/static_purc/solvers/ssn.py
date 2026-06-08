@@ -39,7 +39,7 @@ from typing import Optional, Tuple
 import torch
 
 from ..backends.routing import LaplacianBackend
-from ..config import SSNConfig
+from ..config import ForwardSolverConfig
 from ..problem import PUMProblem
 from ..result import (
     STATUS_CONVERGED,
@@ -76,7 +76,7 @@ class RegularizedSSNSolver(ForwardSolver):
     repeatedly with varying ``theta`` / ``b`` (warm-started by default).
     """
 
-    def __init__(self, config: Optional[SSNConfig] = None) -> None:
+    def __init__(self, config: Optional[ForwardSolverConfig] = None) -> None:
         super().__init__(config)
         self._backend: Optional[LaplacianBackend] = None
         self._lam: Optional[torch.Tensor] = None

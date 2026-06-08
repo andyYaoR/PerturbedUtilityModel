@@ -1,15 +1,19 @@
 """
-Solver configuration for the regularized semismooth Newton (SSN) method.
+Shared configuration for the PURC forward solvers.
 
-The dual SSN loop (see the package README) repeatedly:
-  1. recovers the primal ``x_hat`` from the current multipliers ``lambda``,
-  2. forms the residual ``r = b - A x_hat`` (the dual gradient),
-  3. solves a regularized Newton system ``(H + eps_k I) d = -r`` with
-     ``eps_k = clip(min(eps0, ||r||), eps_floor, eps0)``, and
-  4. takes an Armijo backtracking step on the convex dual objective.
+A single :class:`ForwardSolverConfig` is used by every forward-solve regime -- the
+interior-point method, the regularized semismooth Newton (SSN) method, the barrier
+continuation, and the unified ``auto`` dispatcher -- each of which reads the subset
+of knobs it needs.  Many of the knobs describe the dual SSN loop, which repeatedly:
 
-:class:`SSNConfig` collects the knobs for that loop plus the inner-linear-solve
-config that is forwarded verbatim to LaplacianSolve.
+1. recovers the primal ``x_hat`` from the current multipliers ``lambda``,
+2. forms the residual ``r = b - A x_hat`` (the dual gradient),
+3. solves a regularized Newton system ``(H + eps_k I) d = -r`` with
+   ``eps_k = clip(min(eps0, ||r||), eps_floor, eps0)``, and
+4. takes an Armijo backtracking step on the convex dual objective.
+
+The remaining knobs configure the inner linear solve that is forwarded verbatim to
+LaplacianSolve.
 """
 
 from __future__ import annotations
@@ -19,9 +23,10 @@ from typing import Any, Dict, Optional
 
 
 @dataclass(frozen=True)
-class SSNConfig:
+class ForwardSolverConfig:
     """
-    Configuration for :class:`purcsolver.solvers.ssn.RegularizedSSNSolver`.
+    Shared configuration for the PURC forward solvers (interior-point, semismooth
+    Newton, barrier continuation, and the ``auto`` dispatcher).
 
     Attributes:
         tol: Convergence tolerance on the dual-gradient residual ``||r||_inf``
@@ -116,7 +121,7 @@ class SSNConfig:
         Build a LaplacianSolve ``SolverConfig`` from :attr:`laplacian`.
 
         Imported lazily so the native LaplacianSolve dependency is only required
-        when a solve actually runs, not when an :class:`SSNConfig` is created.
+        when a solve actually runs, not when an :class:`ForwardSolverConfig` is created.
 
         Returns:
             A ``purc.laplaciansolve.SolverConfig`` instance, or ``None`` if

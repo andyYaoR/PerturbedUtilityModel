@@ -145,7 +145,7 @@ def test_estimator_tr_bfgs_method(proj):
     good as ``method='newton'`` through the production estimator interface.
     """
     from purc.estimators.debiased_fy import DebiasedFYEstimator, EstimatorConfig, GammaProjection
-    from purc.static_purc import SSNConfig
+    from purc.static_purc import ForwardSolverConfig
     from purc.static_purc.dgp import ODSpec, simulate_dataset
     from purc.static_purc.solvers.ipm import IPMSolver
 
@@ -161,7 +161,7 @@ def test_estimator_tr_bfgs_method(proj):
         ods.append(ODSpec(b=b, origin=int(o), dest=int(t), D=80))
 
     def _solver():
-        return IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+        return IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
 
     def _fit(method):
         s = _solver()

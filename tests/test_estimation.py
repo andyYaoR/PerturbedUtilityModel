@@ -39,7 +39,7 @@ from purc.estimators.debiased_fy import (
     u_statistics,
 )
 from purc.estimators.debiased_fy.variance import sandwich_variance
-from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc import ForwardSolverConfig, PUMProblem
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.dgp import ODSpec, RandomWalkSampler, simulate_dataset
 from purc.static_purc.perturbations import get_perturbation
@@ -150,7 +150,7 @@ def test_random_walk_orientation_two_node():
 def test_dgp_frequencies_converge_to_xstar():
     inc = _network(6, 1)
     prob = _problem(inc, np.array([0.5]), seed=2)
-    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
     solver.preprocess(prob)
     beta0, gamma0 = np.array([-2.0]), np.array([0.5])
     ods = _ods(inc.shape[0], 4, D=20000, seed=3)
@@ -165,7 +165,7 @@ def test_dgp_frequencies_converge_to_xstar():
 def test_loss_gradient_matches_finite_difference():
     inc = _network(8, 5)
     prob = _problem(inc, np.array([0.5]), seed=6)
-    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
     solver.preprocess(prob)
     beta0, gamma0 = np.array([-2.0]), np.array([0.5])
     ods = _ods(inc.shape[0], 30, D=2000, seed=7)
@@ -186,7 +186,7 @@ def test_score_zero_at_theta0_when_ybar_is_xstar():
     """With empirical frequencies equal to x*(theta0), the score vanishes."""
     inc = _network(8, 9)
     prob = _problem(inc, np.array([0.5]), seed=10)
-    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
     solver.preprocess(prob)
     beta0, gamma0 = np.array([-2.0]), np.array([0.5])
     ods = _ods(inc.shape[0], 12, D=10, seed=11)
@@ -212,7 +212,7 @@ def test_monomial_basis_equals_default():
     """An explicit monomial ``SieveBasis`` reproduces the default (basis=None)."""
     inc = _network(8, 5)
     prob = _problem(inc, np.array([0.5, 0.3, 0.1]), seed=6)
-    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
     solver.preprocess(prob)
     ods = _ods(inc.shape[0], 20, D=2000, seed=7)
     data = simulate_dataset(prob, solver, (np.array([-2.0]), np.array([0.5, 0.3, 0.1])), ods,
@@ -230,7 +230,7 @@ def test_loss_gradient_matches_fd_in_orthonormal_basis():
     inc = _network(8, 5)
     gamma0 = np.array([0.5, 0.3, 0.1])
     prob = _problem(inc, gamma0, seed=6)
-    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
     solver.preprocess(prob)
     ods = _ods(inc.shape[0], 30, D=2000, seed=7)
     data = simulate_dataset(prob, solver, (np.array([-2.0]), gamma0), ods, np.random.default_rng(8))
@@ -253,7 +253,7 @@ def test_debiasing_preserved_in_orthonormal_basis():
     inc = _network(8, 9)
     gamma0 = np.array([0.5, 0.3, 0.1])
     prob = _problem(inc, gamma0, seed=10)
-    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
     solver.preprocess(prob)
     beta0 = np.array([-2.0])
     ods = _ods(inc.shape[0], 12, D=10, seed=11)
@@ -280,7 +280,7 @@ def test_debiasing_preserved_in_orthonormal_basis():
 def test_estimator_finds_sample_minimum(kind):
     inc = _network(8, 12)
     prob = _problem(inc, np.array([0.5]), seed=13)
-    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
     solver.preprocess(prob)
     beta0, gamma0 = np.array([-2.0]), np.array([0.5])
     ods = _ods(inc.shape[0], 60, D=3000, seed=14)
@@ -302,7 +302,7 @@ def test_estimator_finds_sample_minimum(kind):
 def test_sandwich_variance_shapes_and_finite():
     inc = _network(8, 16)
     prob = _problem(inc, np.array([0.5]), seed=17)
-    solver = IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
     solver.preprocess(prob)
     beta0, gamma0 = np.array([-2.0]), np.array([0.5])
     ods = _ods(inc.shape[0], 80, D=3000, seed=18)

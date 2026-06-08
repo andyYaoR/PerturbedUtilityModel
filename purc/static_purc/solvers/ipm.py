@@ -60,7 +60,7 @@ import numpy as np
 import torch
 
 from ..backends.routing import LaplacianBackend
-from ..config import SSNConfig
+from ..config import ForwardSolverConfig
 from ..problem import PUMProblem
 from ..result import STATUS_CONVERGED, STATUS_MAX_ITER, PURCResult
 from ..utils.logging import get_logger
@@ -105,7 +105,7 @@ class IPMSolver(ForwardSolver):
 
     def __init__(
         self,
-        config: Optional[SSNConfig] = None,
+        config: Optional[ForwardSolverConfig] = None,
         *,
         cross_tol: float = 1e-6,
         crossover: bool = True,

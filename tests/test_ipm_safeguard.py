@@ -23,7 +23,7 @@ import pytest
 import scipy.sparse as sp
 
 from purc.static_purc import PUMProblem
-from purc.static_purc.config import SSNConfig
+from purc.static_purc.config import ForwardSolverConfig
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.perturbations import get_perturbation
 from purc.static_purc.solvers.ipm import IPMSolver
@@ -63,7 +63,7 @@ def _problem(n_nodes: int, seed: int, ell_spread: float, vscale: float):
 def test_safeguard_matches_oracle(seed, ell_spread, vscale):
     """The safeguarded IPM solves the box problem (KKT residual ~ 0)."""
     prob, v, gamma = _problem(20, seed, ell_spread, vscale)
-    solver = IPMSolver(SSNConfig(max_iter=200), crossover=True, safeguard=True)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=True, safeguard=True)
     solver.preprocess(prob)
     res = solver.solve((v, gamma))
     assert res.success
@@ -78,7 +78,7 @@ def test_safeguard_matches_oracle(seed, ell_spread, vscale):
 def test_safeguard_is_transparent(seed, ell_spread, vscale):
     """On well-behaved instances the safeguard takes the same steps as raw."""
     prob, v, gamma = _problem(20, seed, ell_spread, vscale)
-    cfg = SSNConfig(max_iter=200)
+    cfg = ForwardSolverConfig(max_iter=200)
     raw = IPMSolver(cfg, crossover=False, safeguard=False)
     raw.preprocess(prob)
     r_raw = raw.solve((v, gamma))
@@ -97,7 +97,7 @@ def test_safeguard_is_transparent(seed, ell_spread, vscale):
 def test_safe_step_only_converges(ell_spread, vscale):
     """rho=0 forces every step to be a safe step; it must still converge."""
     prob, v, gamma = _problem(20, 1, ell_spread, vscale)
-    solver = IPMSolver(SSNConfig(max_iter=300), crossover=False, safeguard=True, rho=0.0)
+    solver = IPMSolver(ForwardSolverConfig(max_iter=300), crossover=False, safeguard=True, rho=0.0)
     solver.preprocess(prob)
     res = solver.solve((v, gamma))
     assert res.success
@@ -109,7 +109,7 @@ def test_safe_step_only_converges(ell_spread, vscale):
 def test_safeguard_rescues_where_raw_diverges():
     """An extreme badly-scaled instance: raw -> NaN, safeguarded converges."""
     prob, v, gamma = _problem(40, 0, ell_spread=8.0, vscale=1e8)
-    cfg = SSNConfig(max_iter=120, tol=1e-8)
+    cfg = ForwardSolverConfig(max_iter=120, tol=1e-8)
     raw = IPMSolver(cfg, crossover=False, safeguard=False)
     raw.preprocess(prob)
     r_raw = raw.solve((v, gamma))

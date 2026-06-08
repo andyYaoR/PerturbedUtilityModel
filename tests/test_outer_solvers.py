@@ -39,7 +39,7 @@ from purc.estimators.debiased_fy import (
     EstimatorConfig,
     GammaProjection,
 )
-from purc.static_purc import PUMProblem, SSNConfig, native_available
+from purc.static_purc import ForwardSolverConfig, PUMProblem, native_available
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.dgp import ODSpec, simulate_dataset
 from purc.static_purc.oracle import solve_scipy
@@ -55,7 +55,7 @@ PROJECTIONS = ["nonneg", "bernstein"]
 
 
 def _solver():
-    return IPMSolver(SSNConfig(max_iter=200), crossover=False, safeguard=True)
+    return IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
 
 
 def _toy(seed: int = 3):

@@ -39,7 +39,7 @@ test = [
     "hypothesis>=6.0.0",
 ]
 dev = [
-    "purcsolver[test,oracle]",
+    "purc[test,oracle]",
     "ruff>=0.4.0",
     "pydocstyle>=6.3.0",
     "darglint>=1.8.0",

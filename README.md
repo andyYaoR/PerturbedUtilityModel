@@ -6,7 +6,7 @@ delegated to the optimized, GIL-released LaplacianSolve backend, vendored in-tre
 [`purc.laplaciansolve`](purc/laplaciansolve).
 
 PURCSolver is a structured, modular companion to the
-[PUM](../PUM) package (same engineering conventions, **without** the equilibrium
+PUM package (same engineering conventions, **without** the equilibrium
 layer). It targets the model class of *"A semi-nonparametric perturbed utility
 model"*: independently swappable **perturbations**, **constraint geometries**, and
 **solvers**, with native C++ hot paths and comprehensive correctness/performance
@@ -67,13 +67,13 @@ local Q-quadratic convergence; an Armijo line search on the dual globalizes it.
   `~1e-9`.
 
 Next: native compiled recovery kernels — both a parameterized C++ kernel and the
-runtime-codegen path, cross-checked for performance (v0.3.0). See the staged plan.
+runtime-codegen path, cross-checked for performance (v0.3.0).
 
 ### Quick example
 
 ```python
 import torch, numpy as np, scipy.sparse as sp
-from purc.static_purc import PUMProblem, SSNConfig
+from purc.static_purc import PUMProblem, ForwardSolverConfig
 from purc.static_purc.constraints import GeneralPolytope
 from purc.static_purc.perturbations import get_perturbation
 from purc.static_purc.solvers import RegularizedSSNSolver
@@ -82,7 +82,7 @@ A = sp.csr_matrix(np.ones((1, 5)))          # sum(x) = 1
 poly = GeneralPolytope(A, b=torch.tensor([1.0]), lo=0.0, hi=1.0)
 prob = PUMProblem(get_perturbation("entropy"), poly)
 
-solver = RegularizedSSNSolver(SSNConfig())
+solver = RegularizedSSNSolver(ForwardSolverConfig())
 solver.preprocess(prob)
 # theta = (beta, gamma); torch or numpy inputs both accepted (bridged zero-copy)
 res = solver.solve((torch.tensor([0.1, -0.4, 0.7, 0.2, -0.1]), torch.zeros(0)))
