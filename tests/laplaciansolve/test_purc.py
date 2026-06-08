@@ -227,7 +227,9 @@ def test_accepts_edge_list_adjacency_incidence():
     for s in builders:
         assert s.n == n and s.num_edges == m
         # uniform weights => identical M across forms regardless of edge ordering
-        sols.append(np.asarray(s.solve_batch(np.full(s.num_edges, 1.3), eps=0.2, rhs=rhs)["solution"]))
+        sols.append(
+            np.asarray(s.solve_batch(np.full(s.num_edges, 1.3), eps=0.2, rhs=rhs)["solution"])
+        )
     for other in sols[1:]:
         assert np.allclose(sols[0], other, atol=1e-10)
 

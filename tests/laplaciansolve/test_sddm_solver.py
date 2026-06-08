@@ -109,9 +109,11 @@ def test_sddm_both_backends_match_dense(method):
     assert s.method == method
     b = np.random.default_rng(21).standard_normal(120)
     x = s.solve(b)
-    assert np.linalg.norm(x - np.linalg.solve(m.toarray(), b)) / np.linalg.norm(
-        np.linalg.solve(m.toarray(), b)
-    ) < 1e-4
+    assert (
+        np.linalg.norm(x - np.linalg.solve(m.toarray(), b))
+        / np.linalg.norm(np.linalg.solve(m.toarray(), b))
+        < 1e-4
+    )
 
 
 def test_cholmod_update_and_batch():

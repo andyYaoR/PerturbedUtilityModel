@@ -131,7 +131,9 @@ class BarrierContinuationSolver(ForwardSolver):
 
         """
         c = problem.constraint
-        if bool((~torch.isfinite(as_tensor(c.lo))).any() or (~torch.isfinite(as_tensor(c.hi))).any()):
+        if bool(
+            (~torch.isfinite(as_tensor(c.lo))).any() or (~torch.isfinite(as_tensor(c.hi))).any()
+        ):
             raise ValueError(
                 "barrier continuation requires a finite box [lo, hi]; this "
                 "constraint has an unbounded side."
@@ -260,7 +262,9 @@ class BarrierContinuationSolver(ForwardSolver):
             The updated multipliers ``lam + t * dlam``.
 
         """
-        phi0 = barrier_dual_objective(self._problem, v, lam, b, gamma, mu, config=self.recovery_config)
+        phi0 = barrier_dual_objective(
+            self._problem, v, lam, b, gamma, mu, config=self.recovery_config
+        )
         gderiv = float(r @ dlam)  # directional derivative of phi_mu (< 0 for a Newton descent dir)
         t = 1.0
         if gderiv >= 0.0:

@@ -34,12 +34,12 @@ class TRConfig:
     """Trust-region BFGS configuration."""
 
     max_iter: int = 200
-    tol: float = 1e-7          # projected-gradient sup-norm stop
-    delta0: float = 1.0        # initial ell_inf radius
+    tol: float = 1e-7  # projected-gradient sup-norm stop
+    delta0: float = 1.0  # initial ell_inf radius
     delta_max: float = 1e3
-    delta_min: float = 1e-14   # stall guard
-    eta1: float = 0.1          # accept threshold (rho)
-    eta2: float = 0.75         # expand threshold
+    delta_min: float = 1e-14  # stall guard
+    eta1: float = 0.1  # accept threshold (rho)
+    eta2: float = 0.75  # expand threshold
     shrink: float = 0.25
     expand: float = 2.0
 
@@ -70,8 +70,9 @@ class TrustRegionBFGS:
         ng = gamma.shape[0]
         big = torch.full((ng,), 1e12, dtype=gamma.dtype)
         a = -torch.ones(bernstein_M.shape[0], dtype=gamma.dtype)
-        res = solve_box_linear_qp(torch.eye(ng, dtype=gamma.dtype), -gamma, -big, big,
-                                  A=bernstein_M, a=a)
+        res = solve_box_linear_qp(
+            torch.eye(ng, dtype=gamma.dtype), -gamma, -big, big, A=bernstein_M, a=a
+        )
         return res.d
 
     def _criticality(self, theta, g, n_beta, bernstein_M):
@@ -151,5 +152,6 @@ class TrustRegionBFGS:
             if gmap < cfg.tol or delta < cfg.delta_min:
                 converged = gmap < cfg.tol
                 break
-        return TRResult(theta=theta, objective=float(Q), grad=g, n_outer=nit,
-                        converged=converged, gmap=gmap)
+        return TRResult(
+            theta=theta, objective=float(Q), grad=g, n_outer=nit, converged=converged, gmap=gmap
+        )

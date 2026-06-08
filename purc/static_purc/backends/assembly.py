@@ -87,9 +87,7 @@ class CSCAssembler:
         # Scatter map ``[nnz, M]`` so a whole batch assembles as one sparse matmul:
         # ``values[B, nnz] = (Smap @ contrib[B, M].T).T`` with ``contrib = coeff * w[srci]``.
         m = self._coeff.size
-        self._scatter = sp.csr_matrix(
-            (np.ones(m), (self._slot, np.arange(m))), shape=(self.nnz, m)
-        )
+        self._scatter = sp.csr_matrix((np.ones(m), (self._slot, np.arange(m))), shape=(self.nnz, m))
 
     def assemble_values(self, w: np.ndarray, eps: float) -> np.ndarray:
         """

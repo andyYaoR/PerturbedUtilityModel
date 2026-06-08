@@ -93,14 +93,26 @@ def _scipy_min(loss, n_beta, bern_M):
     x0 = np.zeros(P)
     if bern_M is None:
         bounds = [(None, None)] * n_beta + [(0.0, None)] * (P - n_beta)
-        res = minimize(lambda x: vg(x)[0], x0, jac=lambda x: vg(x)[1], method="L-BFGS-B",
-                       bounds=bounds, options={"ftol": 1e-15, "gtol": 1e-8, "maxiter": 2000})
+        res = minimize(
+            lambda x: vg(x)[0],
+            x0,
+            jac=lambda x: vg(x)[1],
+            method="L-BFGS-B",
+            bounds=bounds,
+            options={"ftol": 1e-15, "gtol": 1e-8, "maxiter": 2000},
+        )
         converged = bool(res.success)
     else:
         A = np.hstack([np.zeros((bern_M.shape[0], n_beta)), bern_M])
-        res = minimize(lambda x: vg(x)[0], x0, jac=lambda x: vg(x)[1], hess=BFGS(),
-                       method="trust-constr", constraints=[LinearConstraint(A, -1.0, np.inf)],
-                       options={"gtol": 1e-9, "xtol": 1e-14, "maxiter": 500, "verbose": 0})
+        res = minimize(
+            lambda x: vg(x)[0],
+            x0,
+            jac=lambda x: vg(x)[1],
+            hess=BFGS(),
+            method="trust-constr",
+            constraints=[LinearConstraint(A, -1.0, np.inf)],
+            options={"gtol": 1e-9, "xtol": 1e-14, "maxiter": 500, "verbose": 0},
+        )
         converged = bool(res.status in (1, 2))
     return torch.as_tensor(res.x, dtype=DEFAULT_DTYPE), float(res.fun), converged
 
@@ -163,9 +175,13 @@ def _regime(proj: str) -> dict:
     for method in ("newton", "tr_bfgs"):
         sm = _solver()
         sm.preprocess(prob)
-        cfg = EstimatorConfig(proj=GammaProjection(proj), method=method, max_iter=200, tol_grad=1e-6)
+        cfg = EstimatorConfig(
+            proj=GammaProjection(proj), method=method, max_iter=200, tol_grad=1e-6
+        )
         r = DebiasedFYEstimator(prob, sm, L, cfg).fit(data)
-        results[method] = dict(theta=to_numpy(r.theta_hat), Q=float(r.objective), conv=bool(r.converged))
+        results[method] = dict(
+            theta=to_numpy(r.theta_hat), Q=float(r.objective), conv=bool(r.converged)
+        )
     ss = _solver()
     ss.preprocess(prob)
     th, Q, conv = _scipy_min(DebiasedFYLoss(prob, ss, data, L), n_beta, bern_M)
@@ -179,8 +195,12 @@ def _regime(proj: str) -> dict:
     theta_int = torch.as_tensor(np.concatenate([BETA0, GAMMA0]), dtype=DEFAULT_DTYPE)
     c1 = _grad_audit(gate_loss, theta_int)
     crit = {
-        m: dict(gmap=_criticality(gate_loss, torch.as_tensor(r["theta"], dtype=DEFAULT_DTYPE), n_beta, proj_obj),
-                feasible=proj_obj.is_feasible(r["theta"][n_beta:]))
+        m: dict(
+            gmap=_criticality(
+                gate_loss, torch.as_tensor(r["theta"], dtype=DEFAULT_DTYPE), n_beta, proj_obj
+            ),
+            feasible=proj_obj.is_feasible(r["theta"][n_beta:]),
+        )
         for m, r in results.items()
     }
     conv_Qs = [r["Q"] for r in results.values() if r["conv"]]

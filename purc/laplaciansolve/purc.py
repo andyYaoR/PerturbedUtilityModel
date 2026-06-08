@@ -378,7 +378,9 @@ class PURCLaplacianSolver:
             "iterations": 0,
         }
 
-    def solve_batch(self, weights, *, active_mask=None, eps, rhs, rhs_offsets=None, warm_start=None):
+    def solve_batch(
+        self, weights, *, active_mask=None, eps, rhs, rhs_offsets=None, warm_start=None
+    ):
         """
         Assemble and solve a batch of PURC Newton systems in one native call.
 

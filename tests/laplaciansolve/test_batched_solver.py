@@ -151,7 +151,9 @@ def test_per_system_one_rhs_each_default_offsets():
     rhs = rng.standard_normal((3, s.n))
     x = s.solve_batch(values, rhs)
     for sysid, m in enumerate(mats):
-        assert np.linalg.norm(m.toarray() @ x[sysid] - rhs[sysid]) / np.linalg.norm(rhs[sysid]) < 1e-9
+        assert (
+            np.linalg.norm(m.toarray() @ x[sysid] - rhs[sysid]) / np.linalg.norm(rhs[sysid]) < 1e-9
+        )
 
 
 @pytest.mark.skipif(not _HAS_TORCH, reason="torch not installed")

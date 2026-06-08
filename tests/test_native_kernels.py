@@ -81,9 +81,7 @@ def test_barrier_recovery_native_vs_torch(name, gamma, mu):
     from purc.static_purc.constraints import GeneralPolytope
     from purc.static_purc.perturbations import get_perturbation
 
-    inc = np.array(
-        [[1, 0, 0, 1, 0], [-1, 1, 0, 0, 1], [0, -1, 1, -1, 0], [0, 0, -1, 0, -1]], float
-    )
+    inc = np.array([[1, 0, 0, 1, 0], [-1, 1, 0, 0, 1], [0, -1, 1, -1, 0], [0, 0, -1, 0, -1]], float)
     rng = np.random.default_rng(0)
     ell = rng.uniform(0.5, 2.0, inc.shape[1])
     pert = (
@@ -91,7 +89,9 @@ def test_barrier_recovery_native_vs_torch(name, gamma, mu):
         if name == "polynomial_sieve"
         else get_perturbation(name)
     )
-    prob = PUMProblem(pert, GeneralPolytope(sp.csr_matrix(inc), np.array([1.0, 0.0, 0.0, -1.0]), ell=ell))
+    prob = PUMProblem(
+        pert, GeneralPolytope(sp.csr_matrix(inc), np.array([1.0, 0.0, 0.0, -1.0]), ell=ell)
+    )
     v = -rng.uniform(0.5, 3.0, inc.shape[1])
     lam = rng.standard_normal(inc.shape[0]) * 1.5
 

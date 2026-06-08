@@ -45,12 +45,7 @@ def test_barrier_recovery_solves_scalar_kkt(kernel):
     assert bool((x > c.lo).all() and (x < c.hi).all())
     assert bool(torch.isfinite(weight).all() and (weight > 0).all())
 
-    residual = (
-        c.ell * prob.perturbation.hprime(x, gamma)
-        - y
-        - mu / (x - c.lo)
-        + mu / (c.hi - x)
-    )
+    residual = c.ell * prob.perturbation.hprime(x, gamma) - y - mu / (x - c.lo) + mu / (c.hi - x)
     assert float(residual.abs().max()) < 1e-8
 
 

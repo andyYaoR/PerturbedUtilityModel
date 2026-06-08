@@ -82,9 +82,7 @@ class RandomWalkSampler:
         # Outgoing edges per node (edges whose tail is that node).
         self._out: List[np.ndarray] = [np.where(tail == u)[0] for u in range(n_nodes)]
 
-    def sample_trip(
-        self, xstar: np.ndarray, origin: int, dest: int, max_steps: int
-    ) -> np.ndarray:
+    def sample_trip(self, xstar: np.ndarray, origin: int, dest: int, max_steps: int) -> np.ndarray:
         """
         Sample one origin->destination trip; return its binary link-incidence.
 

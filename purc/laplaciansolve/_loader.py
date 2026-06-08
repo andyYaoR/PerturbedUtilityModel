@@ -193,9 +193,7 @@ def _verify_single_openmp_runtime() -> None:
     if os.environ.get("LAPLACIANSOLVE_ALLOW_MULTIPLE_OPENMP"):
         _logger.warning(msg)
     else:
-        raise ImportError(
-            msg + "\nSet LAPLACIANSOLVE_ALLOW_MULTIPLE_OPENMP=1 to proceed anyway."
-        )
+        raise ImportError(msg + "\nSet LAPLACIANSOLVE_ALLOW_MULTIPLE_OPENMP=1 to proceed anyway.")
 
 
 def cholmod_core() -> ModuleType:

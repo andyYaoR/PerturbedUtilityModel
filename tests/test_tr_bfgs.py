@@ -54,11 +54,14 @@ def test_tr_quadratic_nonneg_matches_cvxpy():
     for _ in range(15):
         H, c = _spd(rng, P), rng.standard_normal(P) * 2
         res = TrustRegionBFGS(TRConfig(tol=1e-7, max_iter=300)).minimize(
-            _quad_vg(H, c), np.zeros(P), K, bernstein_M=None)
+            _quad_vg(H, c), np.zeros(P), K, bernstein_M=None
+        )
         assert res.converged
         assert (res.theta.numpy()[K:] >= -1e-7).all()  # feasible gamma >= 0
         x = cp.Variable(P)
-        cp.Problem(cp.Minimize(0.5 * cp.quad_form(x - c, cp.psd_wrap(H))), [x[K:] >= 0]).solve(solver=cp.CLARABEL)
+        cp.Problem(cp.Minimize(0.5 * cp.quad_form(x - c, cp.psd_wrap(H))), [x[K:] >= 0]).solve(
+            solver=cp.CLARABEL
+        )
         worst = max(worst, float(np.abs(res.theta.numpy() - x.value).max()))
     assert worst < 1e-4, worst
 
@@ -74,11 +77,14 @@ def test_tr_quadratic_bernstein_matches_cvxpy():
     for _ in range(12):
         H, c = _spd(rng, P), rng.standard_normal(P) * 2
         res = TrustRegionBFGS(TRConfig(tol=1e-7, max_iter=400)).minimize(
-            _quad_vg(H, c), np.zeros(P), K, bernstein_M=torch.as_tensor(M, dtype=DEFAULT_DTYPE))
+            _quad_vg(H, c), np.zeros(P), K, bernstein_M=torch.as_tensor(M, dtype=DEFAULT_DTYPE)
+        )
         assert res.converged
         assert (M @ res.theta.numpy()[K:] >= -1 - 1e-7).all()  # feasible M gamma >= -1
         x = cp.Variable(P)
-        cp.Problem(cp.Minimize(0.5 * cp.quad_form(x - c, cp.psd_wrap(H))), [M @ x[K:] >= -1]).solve(solver=cp.CLARABEL)
+        cp.Problem(cp.Minimize(0.5 * cp.quad_form(x - c, cp.psd_wrap(H))), [M @ x[K:] >= -1]).solve(
+            solver=cp.CLARABEL
+        )
         worst = max(worst, float(np.abs(res.theta.numpy() - x.value).max()))
     assert worst < 1e-4, worst
 
@@ -93,7 +99,9 @@ def test_tr_smooth_convex_reaches_analytic_optimum():
         f = float((torch.nn.functional.softplus(b) - tt * b).sum())
         return f, torch.sigmoid(b) - tt
 
-    res = TrustRegionBFGS(TRConfig(tol=1e-8, max_iter=200)).minimize(vg, np.zeros(4), 4, bernstein_M=None)
+    res = TrustRegionBFGS(TRConfig(tol=1e-8, max_iter=200)).minimize(
+        vg, np.zeros(4), 4, bernstein_M=None
+    )
     assert res.converged
     assert np.abs(res.theta.numpy() - np.log(t / (1 - t))).max() < 1e-5
 
@@ -107,7 +115,9 @@ def test_tr_already_optimal_returns_fast():
 
 def test_tr_no_gamma_block():
     H, c = np.diag([1.0, 2.0]), np.array([1.0, -1.0])  # K = P = 2, no gamma
-    res = TrustRegionBFGS(TRConfig(tol=1e-9, max_iter=100)).minimize(_quad_vg(H, c), np.zeros(2), 2, bernstein_M=None)
+    res = TrustRegionBFGS(TRConfig(tol=1e-9, max_iter=100)).minimize(
+        _quad_vg(H, c), np.zeros(2), 2, bernstein_M=None
+    )
     assert res.converged
     assert np.abs(res.theta.numpy() - c).max() < 1e-6
 
@@ -166,7 +176,9 @@ def test_estimator_tr_bfgs_method(proj):
     def _fit(method):
         s = _solver()
         s.preprocess(prob)
-        cfg = EstimatorConfig(proj=GammaProjection(proj), method=method, max_iter=300, tol_grad=1e-6)
+        cfg = EstimatorConfig(
+            proj=GammaProjection(proj), method=method, max_iter=300, tol_grad=1e-6
+        )
         return DebiasedFYEstimator(prob, s, L, cfg).fit(data)
 
     try:
@@ -185,6 +197,7 @@ def test_estimator_tr_bfgs_method(proj):
         assert (gamma >= -1e-7).all()
     else:
         from purc.static_purc.perturbations._bernstein import bernstein_matrix
+
         assert (bernstein_matrix(L - 2) @ gamma >= -1 - 1e-7).all()
     # TR-BFGS reaches a stationary point at least as good as Newton (which may stall).
     assert rT.objective <= rN.objective + 1e-6

@@ -59,12 +59,12 @@ def _rand_qp(rng, P=None, degenerate=False):
         a = -np.abs(rng.standard_normal(m)) * rng.uniform(0, 2)
         if degenerate:
             if rng.random() < 0.4:
-                A[rng.integers(m)] *= rng.uniform(1e-5, 1e-3)        # tiny-norm row
+                A[rng.integers(m)] *= rng.uniform(1e-5, 1e-3)  # tiny-norm row
             if m >= 2 and rng.random() < 0.5:  # redundant row
                 j = int(rng.integers(1, m))
                 A[j], a[j] = A[0], a[0]
             if m >= 3 and rng.random() < 0.4:
-                a[int(rng.integers(m))] = 0.0                          # tight at d=0
+                a[int(rng.integers(m))] = 0.0  # tight at d=0
     return B, g, lo, hi, A, a
 
 
@@ -89,7 +89,9 @@ def test_qp_matches_cvxpy():
         P = g.size
         x = cp.Variable(P)
         cons = [x >= lo, x <= hi] + ([A @ x >= a] if A is not None else [])
-        cp.Problem(cp.Minimize(0.5 * cp.quad_form(x, cp.psd_wrap(B)) + g @ x), cons).solve(solver=cp.CLARABEL)
+        cp.Problem(cp.Minimize(0.5 * cp.quad_form(x, cp.psd_wrap(B)) + g @ x), cons).solve(
+            solver=cp.CLARABEL
+        )
         obj = lambda z: 0.5 * z @ B @ z + g @ z  # noqa: E731
         worst = max(worst, abs(obj(d) - float(0.5 * x.value @ B @ x.value + g @ x.value)))
     assert worst < 1e-6, worst
@@ -97,7 +99,9 @@ def test_qp_matches_cvxpy():
 
 def test_qp_one_dimensional_clip():
     # unconstrained min -g/B = -1.5, clipped to the box [-1, 1]
-    res = solve_box_linear_qp_torch(np.array([[2.0]]), np.array([3.0]), np.array([-1.0]), np.array([1.0]))
+    res = solve_box_linear_qp_torch(
+        np.array([[2.0]]), np.array([3.0]), np.array([-1.0]), np.array([1.0])
+    )
     assert res.converged
     assert abs(res.d.item() - (-1.0)) < 1e-10
 

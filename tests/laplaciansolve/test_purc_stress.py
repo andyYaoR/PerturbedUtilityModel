@@ -72,7 +72,9 @@ def naive_solve(edges, n, weights, mask, eps, rhs, offsets):
     else:
         offs = np.arange(batch + 1) if offsets is None else np.asarray(offsets)
         for s in range(batch):
-            solve_block(naive_matrix(edges, n, w[s], eps_v[s]), range(int(offs[s]), int(offs[s + 1])))
+            solve_block(
+                naive_matrix(edges, n, w[s], eps_v[s]), range(int(offs[s]), int(offs[s + 1]))
+            )
     return out
 
 
@@ -153,7 +155,9 @@ def test_isolated_node_present():
     edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.int64)  # node 4 isolated
     n = 5
     rng = np.random.default_rng(2)
-    assert_matches_oracle(edges, n, rng.uniform(0.5, 2.0, 3), eps=0.2, rhs=rng.standard_normal((3, n)))
+    assert_matches_oracle(
+        edges, n, rng.uniform(0.5, 2.0, 3), eps=0.2, rhs=rng.standard_normal((3, n))
+    )
 
 
 def test_disconnected_forest():
@@ -187,9 +191,7 @@ def test_mask_all_inactive_gives_eps_identity():
     edges = random_graph(10, 5, rng)
     m = edges.shape[0]
     rhs = rng.standard_normal((3, 10))
-    assert_matches_oracle(
-        edges, 10, rng.uniform(0.5, 2.0, m), mask=np.zeros(m), eps=0.5, rhs=rhs
-    )
+    assert_matches_oracle(edges, 10, rng.uniform(0.5, 2.0, m), mask=np.zeros(m), eps=0.5, rhs=rhs)
 
 
 def test_mask_all_active_equals_no_mask():
@@ -211,7 +213,11 @@ def test_batch_of_one():
     edges = random_graph(9, 4, rng)
     m = edges.shape[0]
     assert_matches_oracle(
-        edges, 9, rng.uniform(0.5, 2.0, (1, m)), eps=np.array([0.3]), rhs=rng.standard_normal((1, 9))
+        edges,
+        9,
+        rng.uniform(0.5, 2.0, (1, m)),
+        eps=np.array([0.3]),
+        rhs=rng.standard_normal((1, 9)),
     )
 
 
@@ -309,10 +315,17 @@ def test_batched_solver_values_match_oracle(seed):
     pattern.sort_indices()
     solver = BatchedSDDMSolver(pattern)
     batch = 3
-    mats = [sp.csc_matrix(naive_matrix(edges, n, rng.uniform(0.5, 2.0, m), float(rng.uniform(0.1, 1.0)))) for _ in range(batch)]
+    mats = [
+        sp.csc_matrix(
+            naive_matrix(edges, n, rng.uniform(0.5, 2.0, m), float(rng.uniform(0.1, 1.0)))
+        )
+        for _ in range(batch)
+    ]
     for mat in mats:
         mat.sort_indices()
-        assert np.array_equal(mat.indices, pattern.indices) and np.array_equal(mat.indptr, pattern.indptr)
+        assert np.array_equal(mat.indices, pattern.indices) and np.array_equal(
+            mat.indptr, pattern.indptr
+        )
     values = np.ascontiguousarray(np.stack([mat.data for mat in mats]))
     rhs = rng.standard_normal((batch, n))
     got = np.asarray(solver.solve_batch(values, rhs))  # BatchedSDDMSolver returns the array

@@ -93,7 +93,9 @@ def test_falling_factorial_values():
     assert torch.allclose(falling_factorial(n, 0), torch.ones(4, dtype=torch.float64))
     assert torch.allclose(falling_factorial(n, 1), n)
     # 5^{(3)} = 5*4*3 = 60; n<3 -> 0
-    assert torch.allclose(falling_factorial(n, 3), torch.tensor([0.0, 0.0, 0.0, 60.0], dtype=torch.float64))
+    assert torch.allclose(
+        falling_factorial(n, 3), torch.tensor([0.0, 0.0, 0.0, 60.0], dtype=torch.float64)
+    )
 
 
 def test_u_statistics_unbiased_and_naive_biased():
@@ -215,11 +217,16 @@ def test_monomial_basis_equals_default():
     solver = IPMSolver(ForwardSolverConfig(max_iter=200), crossover=False, safeguard=True)
     solver.preprocess(prob)
     ods = _ods(inc.shape[0], 20, D=2000, seed=7)
-    data = simulate_dataset(prob, solver, (np.array([-2.0]), np.array([0.5, 0.3, 0.1])), ods,
-                            np.random.default_rng(8))
-    theta = DebiasedFYLoss(prob, solver, data, L=5).layout.pack(np.array([-1.5]), np.array([0.2, 0.1, 0.05]))
+    data = simulate_dataset(
+        prob, solver, (np.array([-2.0]), np.array([0.5, 0.3, 0.1])), ods, np.random.default_rng(8)
+    )
+    theta = DebiasedFYLoss(prob, solver, data, L=5).layout.pack(
+        np.array([-1.5]), np.array([0.2, 0.1, 0.05])
+    )
     _, g0 = DebiasedFYLoss(prob, solver, data, L=5).value_and_grad(theta)
-    _, g1 = DebiasedFYLoss(prob, solver, data, L=5, basis=SieveBasis.monomial(5)).value_and_grad(theta)
+    _, g1 = DebiasedFYLoss(prob, solver, data, L=5, basis=SieveBasis.monomial(5)).value_and_grad(
+        theta
+    )
     # The monomial basis is a no-op; the two agree up to warm-start FP noise in the
     # shared solver (~1e-15), not any basis effect.
     torch.testing.assert_close(g0, g1, atol=1e-10, rtol=0.0)
@@ -288,7 +295,10 @@ def test_estimator_finds_sample_minimum(kind):
     loss = DebiasedFYLoss(prob, solver, data, L=3)
     q0 = loss.value(loss.layout.pack(beta0, gamma0))
     est = DebiasedFYEstimator(
-        prob, solver, L=3, config=EstimatorConfig(proj=GammaProjection(kind)),
+        prob,
+        solver,
+        L=3,
+        config=EstimatorConfig(proj=GammaProjection(kind)),
         theta_init=loss.layout.pack(np.array([-1.0]), np.array([0.0])),
     )
     res = est.fit(data)

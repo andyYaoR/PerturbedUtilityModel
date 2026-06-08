@@ -127,9 +127,11 @@ def test_forest_exact_random(seed):
     b = rng.standard_normal(n)
     x = solver.solve(b)
     assert np.linalg.norm(m @ x - b) / np.linalg.norm(b) < 1e-9
-    assert np.linalg.norm(x - _dense_solve(m, b[None, :])[0]) / (
-        np.linalg.norm(_dense_solve(m, b[None, :])[0]) + 1e-300
-    ) < 1e-7
+    assert (
+        np.linalg.norm(x - _dense_solve(m, b[None, :])[0])
+        / (np.linalg.norm(_dense_solve(m, b[None, :])[0]) + 1e-300)
+        < 1e-7
+    )
 
 
 @pytest.mark.parametrize("shape", ["path", "star", "caterpillar", "binary_tree"])

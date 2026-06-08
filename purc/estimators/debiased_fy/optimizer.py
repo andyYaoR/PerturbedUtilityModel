@@ -198,13 +198,17 @@ class DebiasedFYEstimator(Estimator):
             # Objective decrease this step (>= 0 since the line search is monotone).
             obj_dec = q_prev - Q
             if cfg.verbose:
-                print(f"  [newton {nit:3d}] Q={Q:.6e} |Gmap|inf={ginf:.2e} step={step_norm:.2e} dQ={obj_dec:.2e}")
+                print(
+                    f"  [newton {nit:3d}] Q={Q:.6e} |Gmap|inf={ginf:.2e} step={step_norm:.2e} dQ={obj_dec:.2e}"
+                )
             stalled = obj_dec <= cfg.tol_obj * (abs(q_prev) + 1.0)
             if ginf < cfg.tol_grad or step_norm < cfg.tol_step or not accepted or stalled:
                 # Stationary to numerical precision: a clean gradient-mapping stop,
                 # or the objective can no longer be decreased (e.g. the optimum is on
                 # an active gamma bound, where the projected curvature is one-sided).
-                converged = ginf < cfg.tol_grad or stalled or (accepted and step_norm < cfg.tol_step)
+                converged = (
+                    ginf < cfg.tol_grad or stalled or (accepted and step_norm < cfg.tol_step)
+                )
                 break
 
         beta, c = layout.unpack(theta)

@@ -109,7 +109,9 @@ class SieveBasis:
         Tinv = r @ np.diag(1.0 / degs)  # c = R Lambda^{-1} gamma
         cond = float(np.linalg.cond(T))
         if not np.isfinite(cond) or cond > _MAX_COND_T:
-            raise ValueError(f"orthonormal basis ill-conditioned (cond(T)={cond:.2e}); L={L} too large")
+            raise ValueError(
+                f"orthonormal basis ill-conditioned (cond(T)={cond:.2e}); L={L} too large"
+            )
         return cls(name="orthonormal", T=T, Tinv=Tinv, L=L)
 
     @property

@@ -117,11 +117,7 @@ def test_ipm_rejects_legendre_kernel(kernel):
 @pytest.mark.parametrize("kernel", SMOOTH_ON_BOX)
 def test_ipm_accepts_smooth_on_box_kernel(kernel):
     """The IPM preprocesses fine for kernels finite on the closed box."""
-    prob, _ = (
-        (_network_problem(kernel))
-        if kernel != "polynomial_sieve"
-        else (_network_sieve())
-    )
+    prob, _ = (_network_problem(kernel)) if kernel != "polynomial_sieve" else (_network_sieve())
     IPMSolver(ForwardSolverConfig(tol=1e-9)).preprocess(prob)  # must not raise
 
 

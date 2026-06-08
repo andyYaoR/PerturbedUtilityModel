@@ -49,10 +49,7 @@ class BarrierRecoveryConfig:
         if self.root_xtol <= 0:
             raise ValueError(f"root_xtol must be > 0, got {self.root_xtol}")
         if not (0 < self.endpoint_margin < 0.25):
-            raise ValueError(
-                "endpoint_margin must be in (0, 0.25), got "
-                f"{self.endpoint_margin}"
-            )
+            raise ValueError(f"endpoint_margin must be in (0, 0.25), got {self.endpoint_margin}")
 
 
 def recover_barrier_primal(

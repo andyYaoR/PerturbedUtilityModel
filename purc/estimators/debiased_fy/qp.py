@@ -32,10 +32,10 @@ from ...static_purc.utils.torch_compat import DEFAULT_DTYPE, as_tensor, to_numpy
 class QPResult:
     """Outcome of a box+linear QP solve."""
 
-    d: torch.Tensor          # the minimizer, shape [P]
-    active: torch.Tensor     # bool mask over the assembled rows [2P + m]
+    d: torch.Tensor  # the minimizer, shape [P]
+    active: torch.Tensor  # bool mask over the assembled rows [2P + m]
     multipliers: torch.Tensor  # KKT multipliers >= 0 over all rows [2P + m]
-    iters: int               # active-set iterations
+    iters: int  # active-set iterations
     converged: bool
 
 
@@ -49,7 +49,7 @@ def _assemble(lo, hi, A, a, P, dtype):
     multipliers can be mapped back to the original rows.
     """
     eye = torch.eye(P, dtype=dtype)
-    rows = [eye, -eye]               # d >= lo ; -d >= -hi
+    rows = [eye, -eye]  # d >= lo ; -d >= -hi
     rhs = [lo, -hi]
     if A is not None and A.numel():
         rows.append(A)
@@ -100,7 +100,7 @@ def solve_box_linear_qp_torch(
             p = -torch.linalg.solve(B, c)
             mu = torch.zeros(0, dtype=B.dtype)
         else:
-            Cw = C.index_select(0, idx)            # [k, P]
+            Cw = C.index_select(0, idx)  # [k, P]
             k = idx.numel()
             kkt = torch.zeros((P + k, P + k), dtype=B.dtype)
             kkt[:P, :P] = B
@@ -116,27 +116,30 @@ def solve_box_linear_qp_torch(
                 sol = torch.linalg.lstsq(kkt, rhs).solution
             p, mu = sol[:P], sol[P:]
 
-        if torch.max(torch.abs(p)) <= tol:           # step ~ 0: test optimality
+        if torch.max(torch.abs(p)) <= tol:  # step ~ 0: test optimality
             if idx.numel() == 0 or bool(torch.all(mu >= -tol)):
                 full_mu = torch.zeros(m, dtype=B.dtype)
                 if idx.numel():
                     full_mu[idx] = mu
                 full_mu = full_mu / row_norms  # map multipliers back to original rows
-                return QPResult(d=d, active=work.clone(), multipliers=full_mu,
-                                iters=iters, converged=True)
+                return QPResult(
+                    d=d, active=work.clone(), multipliers=full_mu, iters=iters, converged=True
+                )
             # Bland's rule: drop the *lowest-index* row with a negative multiplier
             # (least-index pivoting is what guarantees no cycling on degenerate QPs).
             neg = torch.nonzero(mu < -tol, as_tuple=False).reshape(-1)
             work[idx[int(neg[0])]] = False
             continue
 
-        Cp = C @ p                                   # ratio test over inactive rows
+        Cp = C @ p  # ratio test over inactive rows
         blocking = (~work) & (Cp < -tol)
         alpha = torch.tensor(1.0, dtype=B.dtype)
         jblock = -1
         if bool(blocking.any()):
             bi = torch.nonzero(blocking, as_tuple=False).reshape(-1)
-            ratios = (b.index_select(0, bi) - C.index_select(0, bi) @ d) / (C.index_select(0, bi) @ p)
+            ratios = (b.index_select(0, bi) - C.index_select(0, bi) @ d) / (
+                C.index_select(0, bi) @ p
+            )
             amin = torch.min(ratios)
             if amin < alpha:
                 alpha = amin
@@ -169,12 +172,18 @@ def _solve_native(B, g, lo, hi, A, a, tol: float):
     core.qp_box_linear_f64(Bn, gn, lon, hin, An, an, P, m, tol, 0, d, info)
     if info[1] != 1.0:  # native did not converge -> let the caller fall back
         return None
-    return QPResult(d=torch.from_numpy(d).to(DEFAULT_DTYPE), active=torch.zeros(0, dtype=torch.bool),
-                    multipliers=torch.zeros(0, dtype=DEFAULT_DTYPE), iters=int(info[0]), converged=True)
+    return QPResult(
+        d=torch.from_numpy(d).to(DEFAULT_DTYPE),
+        active=torch.zeros(0, dtype=torch.bool),
+        multipliers=torch.zeros(0, dtype=DEFAULT_DTYPE),
+        iters=int(info[0]),
+        converged=True,
+    )
 
 
-def solve_box_linear_qp(B, g, lo, hi, A=None, a=None, *, tol: float = 1e-11, max_iter=None,
-                        prefer_native: bool = True) -> QPResult:
+def solve_box_linear_qp(
+    B, g, lo, hi, A=None, a=None, *, tol: float = 1e-11, max_iter=None, prefer_native: bool = True
+) -> QPResult:
     """
     Solve the box+linear QP, dispatching to the native kernel when available.
 

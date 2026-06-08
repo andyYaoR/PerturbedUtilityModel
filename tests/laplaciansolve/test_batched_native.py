@@ -80,9 +80,7 @@ def _worst_residual(mats, offsets, rhs, xout):
     for s, ms in enumerate(mats):
         dense = ms.toarray()
         for r in range(int(offsets[s]), int(offsets[s + 1])):
-            worst = max(
-                worst, np.linalg.norm(dense @ xout[r] - rhs[r]) / np.linalg.norm(rhs[r])
-            )
+            worst = max(worst, np.linalg.norm(dense @ xout[r] - rhs[r]) / np.linalg.norm(rhs[r]))
     return worst
 
 
