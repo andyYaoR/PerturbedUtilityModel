@@ -16,12 +16,12 @@ jobs:
       - name: Install linters
         run: python -m pip install "ruff>=0.4.0" "pydocstyle>=6.3.0" "darglint>=1.8.0" toml
       - name: Ruff (lint)
-        run: ruff check purcsolver/ tests/ scripts/
+        run: ruff check purc/ tests/ scripts/
       - name: Ruff (format check)
-        run: ruff format --check purcsolver/ tests/ scripts/
+        run: ruff format --check purc/ tests/ scripts/
       - name: pydocstyle
-        run: pydocstyle purcsolver/
+        run: pydocstyle purc/
       - name: darglint
-        run: darglint --docstring-style google --strictness short purcsolver/ || true
+        run: darglint --docstring-style google --strictness short purc/ || true
       - name: Directory boundaries
         run: python scripts/check_dir_boundaries.py
