@@ -55,3 +55,17 @@ PURCSolver is consistently several-fold faster on the medium and large networks 
 the direct Laplacian / CHOLMOD factorization and warm-started reuse outpace a
 general-purpose conic solver -- though the exact ratio depends on a network's size
 and sparsity rather than growing monotonically with size.
+
+Batched throughput
+------------------
+
+For an assignment or estimation sweep over many origin-destination pairs, the solver
+exposes :meth:`solve_batch`, which solves the whole set in one GIL-released native
+call over the shared, preprocessed problem -- not a Python loop.  On ChicagoSketch,
+one ``solve_batch`` over **5000** OD pairs completes in about 39 s (~128 OD/s);
+solving the same 5000 pairs independently with CVXPY would take ~450 s (~11x), and
+the primal solutions agree to ``~1e-7``.
+
+.. code-block:: bash
+
+   python benchmarks/forward_vs_cvxpy.py --networks ChicagoSketch --batch-od 5000

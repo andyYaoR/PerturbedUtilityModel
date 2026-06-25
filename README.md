@@ -98,6 +98,10 @@ CVXPY/Clarabel to ~1e-6 while running several-fold faster on the larger networks
 | ChicagoSketch | 933 | 2950 | 8.4 ms | 88 ms | 10.5× |
 | ChicagoRegional | 12979 | 39018 | 279 ms | 1620 ms | 5.8× |
 
+Many OD pairs are solved together in one parallel `solve_batch` call: e.g. **5000
+ChicagoSketch forward solves in ~39 s (~128 OD/s)**, ~11× the cost of solving them
+independently with CVXPY.
+
 Reproduce with `python benchmarks/forward_vs_cvxpy.py` (needs the CVXPY oracle:
 `pip install --no-build-isolation -e ".[oracle]"`); see the
 [Performance docs](https://andyYaoR.github.io/PerturbedUtilityModel/performance.html)

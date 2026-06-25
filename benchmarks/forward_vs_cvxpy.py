@@ -104,6 +104,24 @@ def _bench_purc(a, cost, v, ods):
     return (statistics.median(times) if times else float("nan")), sols
 
 
+def _bench_batched(a, cost, v, ods, warmup=8):
+    """
+    Solve all ODs in one GIL-released parallel ``solve_batch`` call.
+
+    Returns ``(seconds, x)`` with ``x`` the ``[B, N]`` stacked primal solution.
+    """
+    n = a.shape[0]
+    b_batch = np.stack([_demand(n, o, d) for (o, d) in ods])
+    prob = PUMProblem(get_perturbation("modified_entropy"), GeneralPolytope(a, b_batch[0], ell=cost))
+    solver = get_solver("ipm", config=ForwardSolverConfig(tol=1e-9, max_iter=200))
+    solver.preprocess(prob)
+    if warmup:
+        solver.solve_batch((v, np.zeros(0)), b_batch[:warmup])  # untimed warm-up
+    t = time.perf_counter()
+    res = solver.solve_batch((v, np.zeros(0)), b_batch)  # one parallel solve over all ODs
+    return (time.perf_counter() - t), to_numpy(res.x)
+
+
 def _bench_cvxpy(a, cost, v, ods):
     """Solve each OD with CVXPY/Clarabel; return (median_ms, {od: x})."""
     n, m = a.shape
@@ -131,6 +149,8 @@ def main() -> None:
     ap.add_argument("--networks", default="SiouxFalls,ChicagoSketch")
     ap.add_argument("--n-od", type=int, default=4)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--batch-od", type=int, default=0,
+                    help="if >0, also time one parallel solve_batch over this many ODs")
     args = ap.parse_args()
 
     print(f"Forward solve (modified entropy): IPM vs CVXPY/Clarabel | n_od={args.n_od}")
@@ -157,6 +177,32 @@ def main() -> None:
         else:
             print(f"{name:16s} {net.n_nodes:>6d} {net.n_links:>6d} {purc_ms:>9.2f} "
                   f"{'-':>9s} {'-':>8s} {'-':>9s}")
+
+    if args.batch_od <= 0:
+        return
+    print(f"\nBatched throughput: one parallel solve_batch over {args.batch_od} OD pairs "
+          "(CVXPY≈ extrapolates its per-solve cost x ODs -- it cannot batch)")
+    print(f"\n{'network':16s} {'ODs':>6s} {'total s':>8s} {'per-OD ms':>10s} "
+          f"{'OD/s':>7s} {'CVXPY≈':>9s} {'speedup':>8s} {'max|Δx|':>9s}")
+    for name in (s for s in args.networks.split(",") if s):
+        net = load_net(os.path.join(_DATA, f"{name}_net.tntp"))
+        a, cost = net.A, _cost(net)
+        ods = _ods(a, args.batch_od, seed=args.seed)
+        if len(ods) < 2:
+            print(f"{name:16s}  (no feasible OD pairs)")
+            continue
+        v = -cost
+        secs, xb = _bench_batched(a, cost, v, ods)
+        per_od, ods_per_s = secs / len(ods) * 1e3, len(ods) / secs
+        cvx_str, spd_str, dmax_str = "-", "-", "-"
+        if _HAS_CVXPY:
+            cvx_ms, cvx_x = _bench_cvxpy(a, cost, v, ods[: min(5, len(ods))])
+            cvx_total = cvx_ms * 1e-3 * len(ods)  # CVXPY cannot batch: B independent solves
+            idx = {od: i for i, od in enumerate(ods)}
+            dmax = max((np.abs(xb[idx[od]] - cvx_x[od]).max() for od in cvx_x), default=float("nan"))
+            cvx_str, spd_str, dmax_str = f"{cvx_total:.0f}s", f"{cvx_total / secs:.1f}x", f"{dmax:.1e}"
+        print(f"{name:16s} {len(ods):>6d} {secs:>8.2f} {per_od:>10.3f} "
+              f"{ods_per_s:>7.0f} {cvx_str:>9s} {spd_str:>8s} {dmax_str:>9s}")
 
 
 if __name__ == "__main__":

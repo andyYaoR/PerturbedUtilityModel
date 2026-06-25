@@ -37,6 +37,7 @@ python benchmarks/forward_vs_cvxpy.py \
 | `--networks` | `SiouxFalls,ChicagoSketch` | comma-separated TNTP names found in `examples/data` |
 | `--n-od` | `4` | timed origin–destination pairs per network (plus one untimed warm-up) |
 | `--seed` | `1` | RNG seed for OD-pair sampling |
+| `--batch-od` | `0` | if >0, also time one parallel `solve_batch` over this many ODs |
 
 > On macOS, set `KMP_DUPLICATE_LIB_OK=TRUE` first (PyTorch and CHOLMOD each ship a
 > libomp).
@@ -57,6 +58,24 @@ ChicagoRegional   12979  39018    279.34    1618.4     5.8x   1.5e-07
 - **speedup** — `CVXPY ms / IPM ms`.
 - **max|Δx|** — largest difference between the IPM and CVXPY primal solutions; it
   should be at solver tolerance (`~1e-6`), confirming the two solve the same program.
+
+### Batched throughput
+
+`solve_batch` solves all ODs in one GIL-released native call over the shared,
+preprocessed problem — the assignment / estimation workload — instead of a Python
+loop. Pass `--batch-od N`:
+
+```bash
+python benchmarks/forward_vs_cvxpy.py --networks ChicagoSketch --batch-od 5000
+```
+
+```
+network             ODs  total s  per-OD ms    OD/s    CVXPY≈  speedup   max|Δx|
+ChicagoSketch      5000    39.00      7.801     128      447s    11.5x   5.8e-08
+```
+
+`CVXPY≈` extrapolates Clarabel's per-solve cost × `N` (it cannot batch): ~5000
+independent solves would take ~450 s versus ~39 s for the single batched call.
 
 Absolute times depend on hardware and BLAS; the relative trend is stable. See the
 [Performance page](https://andyYaoR.github.io/PerturbedUtilityModel/performance.html)
