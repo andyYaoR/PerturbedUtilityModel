@@ -43,7 +43,15 @@ hardware and BLAS, but the trend is stable):
      - 8.4
      - 88
      - 10.5x
+   * - ChicagoRegional
+     - 12979
+     - 39018
+     - 279
+     - 1620
+     - 5.8x
 
-The primal solutions agree with CVXPY to ``~1e-6`` (reported as ``max|Δx|``).  The
-speedup grows with problem size: the direct Laplacian / CHOLMOD factorization and
-warm-started reuse pay off most on larger, sparser networks.
+The primal solutions agree with CVXPY to ``~1e-6`` (reported as ``max|Δx|``).
+PURCSolver is consistently several-fold faster on the medium and large networks --
+the direct Laplacian / CHOLMOD factorization and warm-started reuse outpace a
+general-purpose conic solver -- though the exact ratio depends on a network's size
+and sparsity rather than growing monotonically with size.

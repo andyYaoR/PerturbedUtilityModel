@@ -90,13 +90,13 @@ is in the [documentation](https://andyYaoR.github.io/PerturbedUtilityModel/).
 
 The forward solve factorizes the dual Newton (SDDM) system directly with CHOLMOD and
 reuses it across origin–destination pairs. On the bundled TNTP networks it matches
-CVXPY/Clarabel to ~1e-6 while running faster, with the margin growing on larger
-problems:
+CVXPY/Clarabel to ~1e-6 while running several-fold faster on the larger networks:
 
 | Network | Nodes | Links | IPM | CVXPY/Clarabel | Speedup |
 | --- | --- | --- | --- | --- | --- |
 | SiouxFalls | 24 | 76 | 2.5 ms | 3.8 ms | 1.5× |
 | ChicagoSketch | 933 | 2950 | 8.4 ms | 88 ms | 10.5× |
+| ChicagoRegional | 12979 | 39018 | 279 ms | 1620 ms | 5.8× |
 
 Reproduce with `python benchmarks/forward_vs_cvxpy.py` (needs the CVXPY oracle:
 `pip install --no-build-isolation -e ".[oracle]"`); see the
