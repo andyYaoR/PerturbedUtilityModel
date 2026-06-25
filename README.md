@@ -86,6 +86,23 @@ pip install --no-build-isolation -e ".[dev]"
 The full per-platform walkthrough (including an HPC `-march=native` note)
 is in the [documentation](https://andyYaoR.github.io/PerturbedUtilityModel/).
 
+## Performance
+
+The forward solve factorizes the dual Newton (SDDM) system directly with CHOLMOD and
+reuses it across origin–destination pairs. On the bundled TNTP networks it matches
+CVXPY/Clarabel to ~1e-6 while running faster, with the margin growing on larger
+problems:
+
+| Network | Nodes | Links | IPM | CVXPY/Clarabel | Speedup |
+| --- | --- | --- | --- | --- | --- |
+| SiouxFalls | 24 | 76 | 2.5 ms | 3.8 ms | 1.5× |
+| ChicagoSketch | 933 | 2950 | 8.4 ms | 88 ms | 10.5× |
+
+Reproduce with `python benchmarks/forward_vs_cvxpy.py` (needs the CVXPY oracle:
+`pip install --no-build-isolation -e ".[oracle]"`); see the
+[Performance docs](https://andyYaoR.github.io/PerturbedUtilityModel/performance.html)
+for the methodology.
+
 ## Documentation
 
 Full documentation is at **https://andyYaoR.github.io/PerturbedUtilityModel/**.

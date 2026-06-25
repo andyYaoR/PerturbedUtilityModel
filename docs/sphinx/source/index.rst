@@ -58,6 +58,7 @@ Contents
 
    getting_started
    examples/index
+   performance
 
 .. toctree::
    :maxdepth: 2

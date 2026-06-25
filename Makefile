@@ -1,4 +1,4 @@
-.PHONY: help lint format check-docs test test-native build docs clean
+.PHONY: help lint format check-docs test test-native build docs bench clean
 
 # Python sources that the linters and docstring checkers police.
 PYSRC = purc/
@@ -12,6 +12,7 @@ help:
 	@echo "  make test        - Run the Python test suite"
 	@echo "  make test-native - Build the native core and run its parity tests"
 	@echo "  make docs        - Build the HTML documentation (Sphinx)"
+	@echo "  make bench       - Benchmark the forward solve vs CVXPY (needs .[oracle])"
 	@echo "  make clean       - Clean build artifacts and caches"
 
 build:
@@ -42,6 +43,9 @@ test-native:
 docs:
 	$(MAKE) -C docs/sphinx html
 	@echo "Docs built: docs/sphinx/_build/html/index.html"
+
+bench:
+	python benchmarks/forward_vs_cvxpy.py
 
 clean:
 	find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
