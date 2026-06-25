@@ -60,6 +60,30 @@ def _assemble(lo, hi, A, a, P, dtype):
     return C / norms.unsqueeze(1), b / norms, norms
 
 
+def _independent_active_subset(C, active_idx):
+    """
+    Greedily pick a maximal linearly independent subset of the active rows.
+
+    The primal active-set method requires a full-row-rank working set so the KKT
+    system is nonsingular.  Redundant constraints (e.g. duplicated rows) can be
+    active together at ``d = 0``; keeping only an independent subset restores that
+    invariant and avoids a singular KKT solve whose outcome is platform-dependent
+    (some LAPACK backends return garbage rather than raising).  Rows are unit-norm
+    (see :func:`_assemble`), so the residual norm is a clean independence test.
+    """
+    keep = []
+    basis = []  # orthonormal basis of the span of the rows kept so far
+    for i in active_idx.tolist():
+        v = C[i].clone()
+        for q in basis:
+            v = v - (q @ v) * q
+        nv = torch.linalg.norm(v)
+        if nv > 1e-9:
+            basis.append(v / nv)
+            keep.append(i)
+    return keep
+
+
 def solve_box_linear_qp_torch(
     B, g, lo, hi, A=None, a=None, *, tol: float = 1e-11, max_iter: int | None = None
 ) -> QPResult:
@@ -91,7 +115,15 @@ def solve_box_linear_qp_torch(
         max_iter = 10 * (P + m) + 50
 
     d = torch.zeros(P, dtype=B.dtype)
-    work = (C @ d - b).abs() <= tol  # working set: rows active at d=0
+    # Working set: rows active at d=0, reduced to a linearly independent subset so
+    # the KKT stays nonsingular.  The ratio test below only ever adds an independent
+    # row (a row in the span of the working set has C_j p = 0, so it never blocks),
+    # so this is the only place the full-row-rank invariant could be violated.
+    work = torch.zeros(m, dtype=torch.bool)
+    active0 = torch.nonzero((C @ d - b).abs() <= tol, as_tuple=False).reshape(-1)
+    keep = _independent_active_subset(C, active0)
+    if keep:
+        work[keep] = True
     iters = 0
     for iters in range(1, max_iter + 1):
         idx = torch.nonzero(work, as_tuple=False).reshape(-1)
@@ -108,8 +140,9 @@ def solve_box_linear_qp_torch(
             kkt[P:, :P] = Cw
             rhs = torch.zeros(P + k, dtype=B.dtype)
             rhs[:P] = -c
-            # Unit-norm rows + the blocking test keep C_W full row rank, so the
-            # KKT is nonsingular; lstsq is a defensive fallback for exact ties.
+            # The working set is full row rank by construction (independent initial
+            # set; the ratio test adds only independent rows), so the KKT is
+            # nonsingular; lstsq is a defensive fallback for exact ties.
             try:
                 sol = torch.linalg.solve(kkt, rhs)
             except RuntimeError:
